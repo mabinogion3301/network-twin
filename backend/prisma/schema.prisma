@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StationStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+}
+
+enum EquipmentStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+}
+
+enum PortStatus {
+  ONLINE
+  OFFLINE
+  DISABLED
+  ALERT
+}
+
+enum ConnectionStatus {
+  ONLINE
+  OFFLINE
+  ALERT
+  DISABLED
+}
+
+enum ConnectionType {
+  FIBER
+  CABLE
+  RADIO
+  WIRELESS
+  OTHER
+  // Tipos específicos de operadoras/parceiros, cada um com cor e estilo de
+  // linha próprios no mapa (definidos no frontend):
+  ELETRONORTE_CAPACITY // Capacidade Eletronorte — roxo, tracejado
+  ELETROSUL_CAPACITY   // Capacidade Eletrosul — azul claro, tracejado
+  TIM_CAPACITY         // Capacidade TIM — rosa, tracejado
+  TIM_FIBER            // Fibra TIM — rosa choque, linha cheia
+  ELETRONORTE_FIBER    // Fibra Eletronorte — roxo, linha cheia
+  ELETROSUL_FIBER      // Fibra Eletrosul — azul claro, linha cheia
+  GVT_FIBER            // Fibra GVT — marrom, linha cheia
+  CHESF_FIBER          // Fibra Chesf — amarelo, linha cheia
+  TOLETO_FIBER         // Fibra Toleto — cinza, linha cheia
+}
+
+enum PortType {
+  RJ45
+  SFP
+  SFP_PLUS
+  QSFP
+  FIBER
+  OTHER
+}
+
+model Station {
+  id          String        @id @default(uuid())
+  name        String
+  city        String
+  state       String
+  latitude    Float?
+  longitude   Float?
+  // Posição (x, y) no MAPA LÓGICO (Cytoscape) — diferente de latitude/longitude,
+  // que é a posição real no Mapa Geográfico. Permite ao usuário arrastar a
+  // estação no mapa de topologia e manter o layout organizado entre sessões.
+  mapPositionX Float?
+  mapPositionY Float?
+  notes       String?
+  status      StationStatus @default(ONLINE)
+  equipments  Equipment[]
+  linksAsA    StationLink[] @relation("stationLinkA")
+  linksAsB    StationLink[] @relation("stationLinkB")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([city])
+  @@index([state])
+}
+
+model EquipmentType {
+  id         String      @id @default(uuid())
+  name       String      @unique
+  equipments Equipment[]
+}
+
+model Manufacturer {
+  id     String  @id @default(uuid())
+  name   String  @unique
+  models Model[]
+}
+
+model Model {
+  id             String       @id @default(uuid())
+  name           String
+  manufacturerId String
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+  equipments     Equipment[]
+
+  @@unique([manufacturerId, name])
+}
+
+model Equipment {
+  id             String          @id @default(uuid())
+  name           String
+  stationId      String
+  station        Station         @relation(fields: [stationId], references: [id])
+  typeId         String
+  type           EquipmentType   @relation(fields: [typeId], references: [id])
+  manufacturerId String?
+  modelId        String?
+  model          Model?          @relation(fields: [modelId], references: [id])
+  ip             String?
+  mac            String?
+  serial         String?
+  rack           String?
+  rackPosition   String?
+  portCount      Int             @default(0)
+  status         EquipmentStatus @default(ONLINE)
+  ports          Port[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([stationId])
+  @@index([ip])
+}
+
+model Port {
+  id                  String       @id @default(uuid())
+  equipmentId         String
+  equipment           Equipment    @relation(fields: [equipmentId], references: [id])
+  number              Int
+  name                String?
+  type                PortType
+  speed               String?
+  status              PortStatus   @default(ONLINE)
+  connectionsAsSource Connection[] @relation("sourcePort")
+  connectionsAsTarget Connection[] @relation("targetPort")
+
+  @@unique([equipmentId, number])
+}
+
+model Connection {
+  id           String           @id @default(uuid())
+  name         String
+  sourcePortId String
+  sourcePort   Port             @relation("sourcePort", fields: [sourcePortId], references: [id])
+  targetPortId String
+  targetPort   Port             @relation("targetPort", fields: [targetPortId], references: [id])
+  type         ConnectionType
+  distance     Float?
+  fiberCount   Int?
+  fibersUsed   Int?
+  status       ConnectionStatus @default(ONLINE)
+  isBackup     Boolean          @default(false)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([sourcePortId])
+  @@index([targetPortId])
+  @@index([status])
+}
+
+// Conexão direta entre estações — nível usado para calcular disponibilidade
+// (independente das conexões porta-a-porta, é o vínculo "comercial/lógico"
+// declarado entre duas estações; o caminho físico real é derivado do grafo
+// de equipamentos/portas/conexões)
+model StationLink {
+  id         String   @id @default(uuid())
+  stationAId String
+  stationA   Station  @relation("stationLinkA", fields: [stationAId], references: [id])
+  stationBId String
+  stationB   Station  @relation("stationLinkB", fields: [stationBId], references: [id])
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  @@unique([stationAId, stationBId])
+}
+
+model User {
+  id           String     @id @default(uuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id])
+  auditLogs    AuditLog[]
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+}
+
+model Role {
+  id          String @id @default(uuid())
+  name        String @unique
+  permissions Json
+  users       User[]
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  entityType String
+  entityId   String
+  action     String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  diffJson   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+model FailureSimulation {
+  id                   String   @id @default(uuid())
+  triggeredByUserId    String
+  removedConnectionIds String[]
+  removedEquipmentIds  String[]
+  resultJson           Json
+  createdAt            DateTime @default(now())
+}
