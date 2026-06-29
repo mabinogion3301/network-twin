@@ -1,147 +1,148 @@
-# Guia de Deploy — Network Twin na Nuvem
+# Guia de Deploy — Network Twin na Nuvem (100% Gratuito)
 
-Este guia usa **Railway** para o backend + Postgres (mais simples e barato
-pra começar — tem plano gratuito com limite mensal) e **Vercel** para o
-frontend (gratuito para esse tipo de uso). Dá pra trocar por outras
-plataformas (Render, Fly.io, AWS, etc) — a lógica é a mesma, só muda a
-interface.
+Stack escolhida para ser **gratuita indefinidamente**, sem cartão de crédito
+e sem risco de cobrança futura:
+
+- **Neon** — banco PostgreSQL gratuito para sempre
+- **Render** — backend (API NestJS) gratuito para sempre
+- **Vercel** — frontend (React) gratuito para sempre
+
+> ⚠️ Único trade-off do plano gratuito: o backend no Render "dorme" depois de
+> 15 minutos sem uso, e demora ~30 segundos para "acordar" na próxima visita.
+> Isso é normal e esperado — é o preço de ser gratuito sem prazo de validade.
 
 ---
 
-## 1. Backend + Banco de Dados (Railway)
+## 1. Banco de Dados (Neon)
 
-### 1.1 Criar a conta e o projeto
+1. Acesse **https://neon.tech** e crie uma conta (pode usar login do GitHub).
+2. Clique em **"Create a project"**.
+3. Nome do projeto: `network-twin` (ou o que preferir).
+4. Região: escolha a mais próxima do Brasil (ex: `US East` ou `South America` se disponível).
+5. Depois de criado, vá na aba **"Connection string"** (ou "Dashboard" → "Connection Details").
+6. Copie a string que começa com `postgresql://...` — essa é sua `DATABASE_URL`. Guarde ela, vai precisar no próximo passo.
 
-1. Acesse https://railway.app e crie uma conta (pode usar GitHub login).
-2. Clique em **"New Project"** → **"Provision PostgreSQL"** (isso já cria o
-   banco pronto, com a `DATABASE_URL` configurada automaticamente).
+---
 
-### 1.2 Subir o código do backend
+## 2. Backend (Render)
 
-Você precisa do código em um repositório Git (GitHub é o mais simples).
+### 2.1 Criar o Web Service
 
-```bash
-cd network-twin
-git init
-git add .
-git commit -m "Network Twin - deploy inicial"
-```
+1. Acesse **https://render.com** e crie uma conta (pode usar login do GitHub).
+2. Clique em **"New"** → **"Web Service"**.
+3. Conecte sua conta do GitHub (se for a primeira vez, autorize o Render a acessar seus repositórios).
+4. Selecione o repositório `network-twin`.
+5. Configure:
+   - **Name**: `network-twin-backend` (ou o que preferir)
+   - **Root Directory**: `backend`
+   - **Region**: a mais próxima disponível
+   - **Branch**: `main`
+   - **Runtime**: `Docker` (o Render deve detectar o `Dockerfile` automaticamente)
+   - **Instance Type**: `Free`
 
-Crie um repositório novo no GitHub e suba:
-```bash
-git remote add origin https://github.com/SEU_USUARIO/network-twin.git
-git push -u origin main
-```
+### 2.2 Variáveis de ambiente
 
-No Railway: **"New"** → **"GitHub Repo"** → selecione o repositório →
-configure o **Root Directory** como `backend` (já que o repo tem
-backend/frontend juntos).
-
-Railway detecta automaticamente o `Dockerfile` que já está em
-`backend/Dockerfile` e usa ele para o build — não precisa configurar nada
-de build manualmente.
-
-### 1.3 Variáveis de ambiente no Railway
-
-No painel do serviço backend, vá em **"Variables"** e adicione:
+Antes de clicar em "Create Web Service", role até **"Environment Variables"**
+e adicione:
 
 | Variável | Valor |
 |---|---|
-| `DATABASE_URL` | (já vem preenchido automaticamente pelo Railway, pegando do Postgres provisionado — clique em "Add Reference" e selecione o Postgres) |
-| `JWT_ACCESS_SECRET` | uma string aleatória longa, ex: gere com `openssl rand -hex 32` |
+| `DATABASE_URL` | a string que você copiou do Neon no passo 1.6 |
+| `JWT_ACCESS_SECRET` | uma string aleatória longa (pode gerar em https://generate-secret.vercel.app/32) |
 | `JWT_REFRESH_SECRET` | outra string aleatória diferente da anterior |
 | `JWT_ACCESS_EXPIRES_IN` | `15m` |
 | `JWT_REFRESH_EXPIRES_IN` | `7d` |
-| `FRONTEND_URL` | a URL do seu frontend (você vai pegar isso depois do passo 2 — pode deixar em branco por enquanto e voltar aqui) |
-| `PORT` | `3000` (o Railway às vezes ignora e usa a porta dele automaticamente, sem problema) |
+| `FRONTEND_URL` | deixe em branco por enquanto — voltamos aqui depois do passo 3 |
 
-### 1.4 Popular o banco (seed)
+Clique em **"Create Web Service"**. O primeiro deploy demora alguns minutos
+(o Render vai construir a imagem Docker e rodar as migrations automaticamente).
 
-Depois do primeiro deploy funcionar, abra o terminal do Railway
-(botão "..." no serviço → "Shell", ou use a CLI do Railway local) e rode:
+### 2.3 Popular o banco (seed)
 
-```bash
-npm run prisma:seed
-```
+Depois que o deploy terminar com sucesso (status "Live"):
+
+1. No painel do serviço, clique na aba **"Shell"**.
+2. Rode:
+   ```bash
+   npm run prisma:seed
+   ```
 
 Isso cria o usuário admin (`admin@telebras.local` / `admin123`) e os tipos
 de equipamento padrão.
 
-**⚠️ IMPORTANTE: troque a senha do admin assim que conseguir acessar.**
+**⚠️ Troque a senha do admin assim que conseguir acessar o sistema.**
 
-### 1.5 Pegar a URL pública do backend
+### 2.4 Pegar a URL pública do backend
 
-No painel do Railway, vá em **"Settings"** → **"Networking"** →
-**"Generate Domain"**. Isso te dá uma URL pública tipo
-`https://network-twin-backend.up.railway.app`.
+No topo do painel do serviço, copie a URL pública — algo como
+`https://network-twin-backend.onrender.com`. Guarde, vai usar no próximo passo.
 
 ---
 
-## 2. Frontend (Vercel)
+## 3. Frontend (Vercel)
 
-### 2.1 Deploy
-
-1. Acesse https://vercel.com e crie conta (GitHub login também funciona).
-2. **"Add New"** → **"Project"** → selecione o mesmo repositório do GitHub.
-3. Em **"Root Directory"**, selecione `frontend`.
-4. Vercel detecta automaticamente que é um projeto Vite — não precisa mudar
-   build command nem output directory.
-
-### 2.2 Variável de ambiente
-
-Antes de clicar em "Deploy", expanda **"Environment Variables"** e adicione:
+1. Acesse **https://vercel.com** e crie conta (login do GitHub).
+2. **"Add New"** → **"Project"** → selecione o repositório `network-twin`.
+3. Em **"Root Directory"**, clique em "Edit" e selecione `frontend`.
+4. Vercel detecta automaticamente que é Vite — não precisa mudar build command.
+5. Expanda **"Environment Variables"** e adicione:
 
 | Variável | Valor |
 |---|---|
-| `VITE_API_URL` | a URL do backend que você pegou no passo 1.5 (ex: `https://network-twin-backend.up.railway.app`) |
+| `VITE_API_URL` | a URL do backend do passo 2.4 (ex: `https://network-twin-backend.onrender.com`) — **sem barra no final** |
 
-Clique em **Deploy**.
-
-### 2.3 Fechar o ciclo do CORS
-
-Depois que a Vercel te der a URL do frontend (ex:
-`https://network-twin.vercel.app`), volte no Railway e atualize a variável
-`FRONTEND_URL` com essa URL — isso restringe o CORS da API para aceitar
-requisições só do seu frontend.
+6. Clique em **"Deploy"**.
 
 ---
 
-## 3. Testando
+## 4. Fechar o ciclo do CORS
+
+Depois que a Vercel terminar e te der a URL do frontend (ex:
+`https://network-twin.vercel.app`):
+
+1. Volte no **Render**, no seu serviço backend → **"Environment"**.
+2. Edite a variável `FRONTEND_URL` e cole essa URL (sem barra no final).
+3. Salve — o Render vai reiniciar o serviço automaticamente para aplicar.
+
+---
+
+## 5. Testando
 
 1. Acesse a URL do frontend na Vercel.
-2. Faça login com `admin@telebras.local` / `admin123` (e troque a senha!).
-3. Teste cadastrar uma estação, simular uma falha, etc.
+2. **Na primeira visita, pode demorar ~30 segundos** para a página carregar
+   (o backend estava "dormindo" e precisa "acordar"). Isso é normal no plano
+   gratuito do Render.
+3. Faça login com `admin@telebras.local` / `admin123` e **troque a senha**.
+4. Teste cadastrar uma estação, simular uma falha, etc.
 
-Se der erro de CORS ou de conexão, confira:
-- `VITE_API_URL` no frontend está exatamente igual à URL pública do backend (sem barra no final)
-- `FRONTEND_URL` no backend está exatamente igual à URL do frontend
-- O WebSocket também depende de `VITE_API_URL` (usa a mesma variável)
+### Se der erro de CORS ou "Network Error"
 
----
-
-## 4. Segurança antes de usar "de verdade"
-
-Esta aplicação foi construída passo a passo numa conversa de desenvolvimento,
-então alguns pontos merecem atenção antes de um uso real/produtivo:
-
-- **Troque a senha do admin** imediatamente após o primeiro deploy.
-- **Gere segredos JWT fortes e únicos** (não reutilize os de desenvolvimento).
-- **HTTPS obrigatório** — Railway e Vercel já fornecem isso automaticamente.
-- **Backup do banco**: Railway tem opção de backup automático do Postgres nos planos pagos — vale configurar se os dados forem importantes.
-- **Revise os papéis (Roles)** cadastrados — por padrão só existem "Administrador" e "Operador".
+- Confira se `VITE_API_URL` (Vercel) está EXATAMENTE igual à URL do Render, sem barra no final.
+- Confira se `FRONTEND_URL` (Render) está EXATAMENTE igual à URL da Vercel, sem barra no final.
+- Espere o backend "acordar" (primeira requisição depois de inatividade demora).
 
 ---
 
-## 5. Alternativas a este guia
+## 6. Segurança antes de usar "de verdade"
 
-- **Render** (https://render.com): muito parecido com Railway, também tem
-  Postgres gerenciado e detecta Dockerfile automaticamente.
-- **Fly.io**: mais controle de infraestrutura, requer um pouco mais de CLI.
-- **AWS/GCP/Azure**: mais flexível e escalável, mas com curva de aprendizado
-  maior — vale considerar se a Telebras já usa alguma dessas plataformas
-  internamente.
-- **Tudo em uma VM só** (DigitalOcean Droplet, EC2, etc): rode o
-  `docker-compose.yml` que já existe na raiz do projeto (adicionando o
-  backend como serviço também) numa VM com Docker instalado — mais barato
-  para uso contínuo, mas exige você administrar a VM (atualizações de
-  segurança, etc).
+- **Troque a senha do admin** imediatamente.
+- **Gere segredos JWT fortes e únicos** — não reutilize os de desenvolvimento.
+- **HTTPS já vem automático** no Render e na Vercel.
+- **Backup do banco**: o plano gratuito do Neon mantém o banco, mas vale
+  exportar um backup manual periodicamente enquanto o uso for crítico
+  (`pg_dump`, disponível na aba de conexão do Neon).
+
+---
+
+## 7. Quando "crescer" e precisar de mais
+
+Se o uso da equipe aumentar e o "sono" do backend gratuito começar a
+incomodar (ex: muitos usuários simultâneos esperando os 30s de boot), as
+opções de upgrade, em ordem de custo:
+
+- **Render** tem um plano pago "Starter" (~US$7/mês) que remove o "sono".
+- **Neon** tem planos pagos com mais armazenamento/computação se o banco crescer muito.
+- Nesse ponto, migrar para Railway ou uma VM dedicada também passa a fazer sentido.
+
+Mas para uso interno, testes, e validação do sistema, o plano 100% gratuito
+deve ser suficiente por um bom tempo.
