@@ -28,8 +28,13 @@ export class UsersService {
     });
   }
 
-  update(id: string, dto: UpdateUserDto) {
-    return this.prisma.user.update({ where: { id }, data: dto });
+  async update(id: string, dto: UpdateUserDto) {
+    const { newPassword, ...rest } = dto;
+    const data: any = { ...rest };
+    if (newPassword) {
+      data.passwordHash = await AuthService.hashPassword(newPassword);
+    }
+    return this.prisma.user.update({ where: { id }, data });
   }
 
   remove(id: string) {
