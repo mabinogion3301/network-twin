@@ -18,7 +18,9 @@ COPY prisma ./prisma
 RUN npm install --omit=dev
 RUN npx prisma generate
 COPY --from=build /app/dist ./dist
+COPY start.sh ./start.sh
+RUN chmod +x start.sh
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma db push --accept-data-loss && node prisma/seed.js && node dist/src/main"]
+CMD ["./start.sh"]
