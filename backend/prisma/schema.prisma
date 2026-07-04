@@ -34,22 +34,24 @@ enum ConnectionStatus {
 }
 
 enum ConnectionType {
-  FIBER
-  CABLE
-  RADIO
-  WIRELESS
+  // Capacidades (tracejadas) — cor igual à fibra do mesmo provedor
+  ELETRONORTE_CAPACITY  // Capacidade Eletronorte — roxo, tracejado
+  TIM_CAPACITY          // Capacidade TIM — rosa, tracejado
+  ELETROSUL_CAPACITY    // Capacidade Eletrosul — azul claro, tracejado
+  // Fibras (linha cheia)
+  ELETRONORTE_FIBER     // Fibra Eletronorte — roxo
+  TIM_FIBER             // Fibra TIM — rosa
+  ELETROSUL_FIBER       // Fibra Eletrosul — azul claro
+  GVT_FIBER             // Fibra GVT — marrom
+  CHESF_FIBER           // Fibra Chesf — amarelo
+  FURNAS_FIBER          // Fibra Furnas — laranja
+  PETROBRAS_FIBER       // Fibra Petrobras — verde
+  CEMIG_FIBER           // Fibra Cemig — verde lima
+  TELEBRAS_FIBER        // Fibra Telebras — branco
+  RNP_FIBER             // Fibra RNP — ciano
+  PRODEPA_FIBER         // Fibra Prodepa — vermelho coral
   OTHER
-  // Tipos específicos de operadoras/parceiros, cada um com cor e estilo de
-  // linha próprios no mapa (definidos no frontend):
-  ELETRONORTE_CAPACITY // Capacidade Eletronorte — roxo, tracejado
-  ELETROSUL_CAPACITY   // Capacidade Eletrosul — azul claro, tracejado
-  TIM_CAPACITY         // Capacidade TIM — rosa, tracejado
-  TIM_FIBER            // Fibra TIM — rosa choque, linha cheia
-  ELETRONORTE_FIBER    // Fibra Eletronorte — roxo, linha cheia
-  ELETROSUL_FIBER      // Fibra Eletrosul — azul claro, linha cheia
-  GVT_FIBER            // Fibra GVT — marrom, linha cheia
-  CHESF_FIBER          // Fibra Chesf — amarelo, linha cheia
-  TOLETO_FIBER         // Fibra Toleto — cinza, linha cheia
+}
 }
 
 enum PortType {

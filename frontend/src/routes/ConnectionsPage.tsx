@@ -5,20 +5,23 @@ import { DataTable } from '../components/shared/DataTable';
 import { FormModal, FormField, inputStyle } from '../components/shared/FormModal';
 
 const TYPE_OPTIONS = [
-  { value: 'FIBER', label: 'Fibra (genérica)' },
-  { value: 'CABLE', label: 'Cabo' },
-  { value: 'RADIO', label: 'Rádio' },
-  { value: 'WIRELESS', label: 'Wireless' },
-  { value: 'OTHER', label: 'Outro' },
-  { value: 'ELETRONORTE_CAPACITY', label: 'Capacidade Eletronorte (roxo, tracejado)' },
-  { value: 'ELETROSUL_CAPACITY', label: 'Capacidade Eletrosul (azul claro, tracejado)' },
-  { value: 'TIM_CAPACITY', label: 'Capacidade TIM (rosa, tracejado)' },
-  { value: 'TIM_FIBER', label: 'Fibra TIM (rosa choque)' },
-  { value: 'ELETRONORTE_FIBER', label: 'Fibra Eletronorte (roxo)' },
-  { value: 'ELETROSUL_FIBER', label: 'Fibra Eletrosul (azul claro)' },
-  { value: 'GVT_FIBER', label: 'Fibra GVT (marrom)' },
-  { value: 'CHESF_FIBER', label: 'Fibra Chesf (amarelo)' },
-  { value: 'TOLETO_FIBER', label: 'Fibra Toleto (cinza)' },
+  // Capacidades (linha tracejada)
+  { value: 'ELETRONORTE_CAPACITY', label: 'Capacidade Eletronorte' },
+  { value: 'TIM_CAPACITY',         label: 'Capacidade TIM' },
+  { value: 'ELETROSUL_CAPACITY',   label: 'Capacidade Eletrosul' },
+  // Fibras (linha cheia)
+  { value: 'ELETRONORTE_FIBER',    label: 'Fibra Eletronorte' },
+  { value: 'TIM_FIBER',            label: 'Fibra TIM' },
+  { value: 'ELETROSUL_FIBER',      label: 'Fibra Eletrosul' },
+  { value: 'GVT_FIBER',            label: 'Fibra GVT' },
+  { value: 'CHESF_FIBER',          label: 'Fibra Chesf' },
+  { value: 'FURNAS_FIBER',         label: 'Fibra Furnas' },
+  { value: 'PETROBRAS_FIBER',      label: 'Fibra Petrobras' },
+  { value: 'CEMIG_FIBER',          label: 'Fibra Cemig' },
+  { value: 'TELEBRAS_FIBER',       label: 'Fibra Telebras' },
+  { value: 'RNP_FIBER',            label: 'Fibra RNP' },
+  { value: 'PRODEPA_FIBER',        label: 'Fibra Prodepa' },
+  { value: 'OTHER',                label: 'Outro' },
 ];
 
 export function ConnectionsPage() {

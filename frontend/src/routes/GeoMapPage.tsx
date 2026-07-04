@@ -39,22 +39,35 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 // Estilo visual (cor + tracejado) de cada TIPO de conexão/operadora.
-// Usado tanto para colorir a linha no mapa quanto para listar no popup.
+// Capacidades = mesma cor da fibra do mesmo provedor, mas tracejadas.
 export const CONNECTION_TYPE_STYLES: Record<string, { label: string; color: string; dashed: boolean }> = {
-  ELETRONORTE_CAPACITY: { label: 'Capacidade Eletronorte', color: '#8b5cf6', dashed: true },
-  ELETROSUL_CAPACITY: { label: 'Capacidade Eletrosul', color: '#38bdf8', dashed: true },
-  TIM_CAPACITY: { label: 'Capacidade TIM', color: '#f472b6', dashed: true },
-  TIM_FIBER: { label: 'Fibra TIM', color: '#ec4899', dashed: false },
-  ELETRONORTE_FIBER: { label: 'Fibra Eletronorte', color: '#8b5cf6', dashed: false },
-  ELETROSUL_FIBER: { label: 'Fibra Eletrosul', color: '#38bdf8', dashed: false },
-  GVT_FIBER: { label: 'Fibra GVT', color: '#92400e', dashed: false },
-  CHESF_FIBER: { label: 'Fibra Chesf', color: '#eab308', dashed: false },
-  TOLETO_FIBER: { label: 'Fibra Toleto', color: '#9ca3af', dashed: false },
-  FIBER: { label: 'Fibra', color: '#94a3b8', dashed: false },
-  CABLE: { label: 'Cabo', color: '#94a3b8', dashed: false },
-  RADIO: { label: 'Rádio', color: '#94a3b8', dashed: true },
-  WIRELESS: { label: 'Wireless', color: '#94a3b8', dashed: true },
-  OTHER: { label: 'Outro', color: '#94a3b8', dashed: false },
+  // Eletronorte — roxo
+  ELETRONORTE_CAPACITY: { label: 'Capacidade Eletronorte', color: '#8b5cf6', dashed: true  },
+  ELETRONORTE_FIBER:    { label: 'Fibra Eletronorte',       color: '#8b5cf6', dashed: false },
+  // TIM — rosa choque
+  TIM_CAPACITY:         { label: 'Capacidade TIM',          color: '#ec4899', dashed: true  },
+  TIM_FIBER:            { label: 'Fibra TIM',               color: '#ec4899', dashed: false },
+  // Eletrosul — azul claro
+  ELETROSUL_CAPACITY:   { label: 'Capacidade Eletrosul',    color: '#38bdf8', dashed: true  },
+  ELETROSUL_FIBER:      { label: 'Fibra Eletrosul',         color: '#38bdf8', dashed: false },
+  // GVT — marrom âmbar
+  GVT_FIBER:            { label: 'Fibra GVT',               color: '#d97706', dashed: false },
+  // Chesf — amarelo
+  CHESF_FIBER:          { label: 'Fibra Chesf',             color: '#facc15', dashed: false },
+  // Furnas — laranja
+  FURNAS_FIBER:         { label: 'Fibra Furnas',            color: '#f97316', dashed: false },
+  // Petrobras — verde escuro
+  PETROBRAS_FIBER:      { label: 'Fibra Petrobras',         color: '#16a34a', dashed: false },
+  // Cemig — verde lima
+  CEMIG_FIBER:          { label: 'Fibra Cemig',             color: '#84cc16', dashed: false },
+  // Telebras — branco
+  TELEBRAS_FIBER:       { label: 'Fibra Telebras',          color: '#f8fafc', dashed: false },
+  // RNP — ciano
+  RNP_FIBER:            { label: 'Fibra RNP',               color: '#06b6d4', dashed: false },
+  // Prodepa — vermelho coral
+  PRODEPA_FIBER:        { label: 'Fibra Prodepa',           color: '#f43f5e', dashed: false },
+  // Genérico
+  OTHER:                { label: 'Outro',                   color: '#94a3b8', dashed: false },
 };
 
 // Cores do RESULTADO de uma simulação de falha (têm prioridade sobre a cor
