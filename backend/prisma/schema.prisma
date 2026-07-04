@@ -51,7 +51,6 @@ enum ConnectionType {
   RNP_FIBER             // Fibra RNP — ciano
   PRODEPA_FIBER         // Fibra Prodepa — vermelho coral
   OTHER
-
 }
 
 enum PortType {

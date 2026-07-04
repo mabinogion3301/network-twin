@@ -113,6 +113,34 @@ const INITIAL_ZOOM = 4;
 // disso (visão geral do Brasil), os nomes ficam escondidos para não poluir.
 const LABEL_VISIBLE_ZOOM = 7;
 
+/**
+ * Desloca lateralmente um segmento de linha em `offsetMeters` metros
+ * perpendicular à direção (lat1,lng1)→(lat2,lng2).
+ * Usado para separar visualmente conexões paralelas entre o mesmo par
+ * de estações que ficariam empilhadas no mapa.
+ */
+function applyOffset(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number,
+  offsetMeters: number,
+): [[number, number], [number, number]] {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLng = toRad(lng2 - lng1);
+  const lat1r = toRad(lat1);
+  const lat2r = toRad(lat2);
+  const y = Math.sin(dLng) * Math.cos(lat2r);
+  const x = Math.cos(lat1r) * Math.sin(lat2r) - Math.sin(lat1r) * Math.cos(lat2r) * Math.cos(dLng);
+  const bearing = Math.atan2(y, x);
+  const perp = bearing + Math.PI / 2;
+  const midLat = (lat1 + lat2) / 2;
+  const dLatDeg = (offsetMeters / 111320) * Math.cos(perp);
+  const dLngDeg = (offsetMeters / (111320 * Math.cos(toRad(midLat)))) * Math.sin(perp);
+  return [
+    [lat1 + dLatDeg, lng1 + dLngDeg],
+    [lat2 + dLatDeg, lng2 + dLngDeg],
+  ];
+}
+
 // Componente "invisível" que só observa o zoom atual do mapa e avisa o
 // componente pai — é assim que decidimos quando mostrar/escoder os nomes.
 function ZoomTracker({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
@@ -286,39 +314,65 @@ export function GeoMapPage() {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             />
 
-            {links.map((link) => {
-              const source = stationById[link.sourceStationId];
-              const target = stationById[link.targetStationId];
-              if (!source?.latitude || !target?.latitude) return null;
+            {(() => {
+              // Agrupa links pelo par de estações (ordem canônica A<B para
+              // tratar A→B e B→A como o mesmo par) e calcula o índice de
+              // cada link dentro do grupo, para aplicar o offset lateral.
+              const pairCount: Record<string, number> = {};
+              const pairIndex: Record<string, number> = {};
+              for (const link of links) {
+                const key = [link.sourceStationId, link.targetStationId].sort().join('|');
+                pairIndex[link.id] = pairCount[key] ?? 0;
+                pairCount[key] = (pairCount[key] ?? 0) + 1;
+              }
 
-              const { color, dashed, broken } = colorForLink(link);
-              const typeStyle = CONNECTION_TYPE_STYLES[link.type];
+              return links.map((link) => {
+                const source = stationById[link.sourceStationId];
+                const target = stationById[link.targetStationId];
+                if (!source?.latitude || !target?.latitude) return null;
 
-              return (
-                <Polyline
-                  key={link.id}
-                  positions={[
-                    [source.latitude, source.longitude!],
-                    [target.latitude, target.longitude!],
-                  ]}
-                  pathOptions={{ color, weight: broken ? 4 : 3, dashArray: dashed ? '8 6' : undefined }}
-                >
-                  <Popup>
-                    <strong>{link.name}</strong>
-                    <br />
-                    {source.name} ⟷ {target.name}
-                    <br />
-                    Tipo:{' '}
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ width: 9, height: 9, borderRadius: '50%', background: typeStyle?.color ?? '#94a3b8', display: 'inline-block' }} />
-                      {typeStyle?.label ?? link.type}
-                    </span>
-                    <br />
-                    Status: {broken ? 'ROMPIDO (simulação ativa)' : link.status}
-                  </Popup>
-                </Polyline>
-              );
-            })}
+                const { color, dashed, broken } = colorForLink(link);
+                const typeStyle = CONNECTION_TYPE_STYLES[link.type];
+
+                const pairKey = [link.sourceStationId, link.targetStationId].sort().join('|');
+                const total = pairCount[pairKey] ?? 1;
+                const idx = pairIndex[link.id] ?? 0;
+
+                // Distribui os links simetricamente ao redor do centro:
+                // ex: 2 links → offsets [-15000, +15000]m
+                //     3 links → [-20000, 0, +20000]m
+                const SPACING = 15000; // metros entre cada linha paralela
+                const offsetMeters = total > 1
+                  ? (idx - (total - 1) / 2) * SPACING
+                  : 0;
+
+                const positions = offsetMeters !== 0
+                  ? applyOffset(source.latitude, source.longitude!, target.latitude, target.longitude!, offsetMeters)
+                  : [[source.latitude, source.longitude!], [target.latitude, target.longitude!]] as [[number, number], [number, number]];
+
+                return (
+                  <Polyline
+                    key={link.id}
+                    positions={positions}
+                    pathOptions={{ color, weight: broken ? 4 : 3, dashArray: dashed ? '8 6' : undefined }}
+                  >
+                    <Popup>
+                      <strong>{link.name}</strong>
+                      <br />
+                      {source.name} ⟷ {target.name}
+                      <br />
+                      Tipo:{' '}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ width: 9, height: 9, borderRadius: '50%', background: typeStyle?.color ?? '#94a3b8', display: 'inline-block' }} />
+                        {typeStyle?.label ?? link.type}
+                      </span>
+                      <br />
+                      Status: {broken ? 'ROMPIDO (simulação ativa)' : link.status}
+                    </Popup>
+                  </Polyline>
+                );
+              });
+            })()}
 
             {stationsWithCoords.map((station) => {
               const state = stationVisualState(station);
