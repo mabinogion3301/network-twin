@@ -155,6 +155,11 @@ export class TopologyService {
         name: conn.name,
         sourceStationId: conn.sourcePort.equipment.stationId,
         targetStationId: conn.targetPort.equipment.stationId,
+        // Nomes dos equipamentos que estão nas pontas desta conexão
+        sourceEquipmentId: conn.sourcePort.equipmentId,
+        sourceEquipmentName: conn.sourcePort.equipment.name,
+        targetEquipmentId: conn.targetPort.equipmentId,
+        targetEquipmentName: conn.targetPort.equipment.name,
         status: conn.status,
         type: conn.type,
         isBackup: conn.isBackup,

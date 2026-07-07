@@ -25,6 +25,8 @@ interface GeoLink {
   name: string;
   sourceStationId: string;
   targetStationId: string;
+  sourceEquipmentName: string;
+  targetEquipmentName: string;
   status: string;
   type: string;
   isBackup: boolean;
@@ -357,17 +359,38 @@ export function GeoMapPage() {
                     pathOptions={{ color, weight: broken ? 4 : 3, dashArray: dashed ? '8 6' : undefined }}
                   >
                     <Popup>
-                      <strong>{link.name}</strong>
-                      <br />
-                      {source.name} ⟷ {target.name}
-                      <br />
-                      Tipo:{' '}
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ width: 9, height: 9, borderRadius: '50%', background: typeStyle?.color ?? '#94a3b8', display: 'inline-block' }} />
-                        {typeStyle?.label ?? link.type}
-                      </span>
-                      <br />
-                      Status: {broken ? 'ROMPIDO (simulação ativa)' : link.status}
+                      <div style={{ minWidth: 200 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, borderBottom: '1px solid #1e293b', paddingBottom: 6 }}>
+                          {link.name}
+                        </div>
+
+                        {/* Ponta A */}
+                        <div style={{ fontSize: 12, marginBottom: 4 }}>
+                          <span style={{ color: '#64748b', fontSize: 10, display: 'block', marginBottom: 1 }}>ORIGEM</span>
+                          <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{link.sourceEquipmentName}</span>
+                          <span style={{ color: '#64748b' }}> · {source.name}</span>
+                        </div>
+
+                        <div style={{ textAlign: 'center', color: '#334155', fontSize: 11, margin: '4px 0' }}>⟷</div>
+
+                        {/* Ponta B */}
+                        <div style={{ fontSize: 12, marginBottom: 8 }}>
+                          <span style={{ color: '#64748b', fontSize: 10, display: 'block', marginBottom: 1 }}>DESTINO</span>
+                          <span style={{ fontWeight: 600, color: '#e2e8f0' }}>{link.targetEquipmentName}</span>
+                          <span style={{ color: '#64748b' }}> · {target.name}</span>
+                        </div>
+
+                        {/* Tipo e status */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #1e293b', paddingTop: 6, fontSize: 11 }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#94a3b8' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: typeStyle?.color ?? '#94a3b8', display: 'inline-block' }} />
+                            {typeStyle?.label ?? link.type}
+                          </span>
+                          <span style={{ color: broken ? '#ef4444' : '#94a3b8' }}>
+                            {broken ? '⚠ ROMPIDO' : link.status}
+                          </span>
+                        </div>
+                      </div>
                     </Popup>
                   </Polyline>
                 );
