@@ -6,8 +6,6 @@ import { topologyApi } from '../services/api/auth.api';
 import { stationsApi } from '../services/api/stations.api';
 import { api } from '../services/api/client';
 import { simulationsApi } from '../services/api/dashboard.api';
-import { EventsPanel } from '../components/topology/EventsPanel';
-import { ImpactPanel } from '../components/topology/ImpactPanel';
 import { useWebSocket, SimulationResult } from '../hooks/useWebSocket';
 
 interface GeoStation {
@@ -186,7 +184,13 @@ export function GeoMapPage() {
   const handleSimulationResult = useCallback((result: SimulationResult) => {
     setSimulationResult(result);
   }, []);
-  useWebSocket(handleSimulationResult);
+
+  // Quando qualquer usuário cria/edita/remove estação, equipamento ou
+  // conexão, o backend emite 'topology:changed' e recarregamos o mapa aqui
+  // — garante que todos os PCs vejam a topologia sempre atualizada.
+  const handleTopologyChanged = useCallback(() => { load(); }, []);
+
+  useWebSocket(handleSimulationResult, handleTopologyChanged);
 
   // "Normalizar" — seja de uma estação específica ou tudo — funciona
   // EXATAMENTE como "Romper": chama o mesmo endpoint, que persiste o novo
@@ -278,22 +282,28 @@ export function GeoMapPage() {
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#0f172a' }}>
-      <div style={{ padding: '12px 20px', background: '#1e293b', color: '#e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0 }}>Mapa da Rede — Cobertura Nacional</h3>
-        {loading && <span style={{ fontSize: 12, color: '#94a3b8' }}>Carregando...</span>}
-      </div>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
 
-      <EventsPanel activeConnectionIds={simulationResult?.removedConnectionIds ?? []} />
-
+      {/* Barra de status — só aparece quando há simulação ativa */}
       {simulationResult && (simulationResult.removedConnectionIds?.length ?? 0) > 0 && (
-        <div style={{ padding: '6px 20px', background: '#1e293b', display: 'flex', gap: 16, fontSize: 12, color: '#94a3b8', alignItems: 'center', flexWrap: 'wrap' }}>
-          <Legend color={BROKEN_COLOR} label="Rompido / sem comunicação" />
-          <Legend color={DEGRADED_COLOR} label="Atenuado (perdeu redundância)" />
-          <Legend color={SATURATING_COLOR} label="Saturando (restou só 1 link)" />
+        <div style={{
+          padding: '8px 20px', background: 'rgba(239,68,68,0.1)',
+          borderBottom: '1px solid rgba(239,68,68,0.25)',
+          display: 'flex', alignItems: 'center', gap: 12, fontSize: 12,
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--red)', boxShadow: '0 0 6px #ef4444', display: 'inline-block', flexShrink: 0 }} />
+          <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+            SIMULAÇÃO ATIVA · {simulationResult.removedConnectionIds.length} falha(s) ·
+            {simulationResult.unavailableStationPairs?.length ? ` ${simulationResult.unavailableStationPairs.length} par(es) sem comunicação` : ' sem impacto detectado'}
+          </span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <Legend color={BROKEN_COLOR} label="Rompido" />
+            <Legend color={DEGRADED_COLOR} label="Atenuado" />
+            <Legend color={SATURATING_COLOR} label="Saturando" />
+          </div>
           <button
             onClick={normalizeAll}
-            style={{ marginLeft: 'auto', background: '#334155', border: 'none', borderRadius: 6, padding: '4px 10px', color: '#e2e8f0', cursor: 'pointer', fontSize: 12 }}
+            style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-hi)', borderRadius: 'var(--radius)', padding: '4px 10px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-mono)', flexShrink: 0 }}
           >
             ✓ Normalizar tudo
           </button>
@@ -301,15 +311,13 @@ export function GeoMapPage() {
       )}
 
       {stationsWithoutCoords.length > 0 && (
-        <div style={{ padding: '8px 20px', background: '#422006', color: '#fbbf24', fontSize: 13 }}>
-          {stationsWithoutCoords.length} estação(ões) sem coordenadas cadastradas e por isso não aparecem no mapa:{' '}
-          {stationsWithoutCoords.map((s) => s.name).join(', ')}. Edite-as em "Estações" para informar Latitude/Longitude.
+        <div style={{ padding: '7px 20px', background: 'rgba(245,158,11,0.08)', borderBottom: '1px solid rgba(245,158,11,0.2)', color: '#f59e0b', fontSize: 12 }}>
+          {stationsWithoutCoords.length} estação(ões) sem coordenadas: {stationsWithoutCoords.map((s) => s.name).join(', ')} — edite em "Estações" para aparecer no mapa.
         </div>
       )}
 
-      <div style={{ flex: 1, display: 'flex' }}>
-        <div style={{ flex: 1 }}>
-          <MapContainer center={BRAZIL_CENTER} zoom={INITIAL_ZOOM} style={{ height: '100%', width: '100%', background: '#0f172a' }}>
+      <div style={{ flex: 1 }}>
+        <MapContainer center={BRAZIL_CENTER} zoom={INITIAL_ZOOM} style={{ height: '100%', width: '100%', background: 'var(--bg-base)' }}>
             <ZoomTracker onZoomChange={setZoom} />
             <TileLayer
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
@@ -389,6 +397,27 @@ export function GeoMapPage() {
                           <span style={{ color: broken ? '#ef4444' : '#94a3b8' }}>
                             {broken ? '⚠ ROMPIDO' : link.status}
                           </span>
+                        </div>
+                        {/* Ação */}
+                        <div style={{ marginTop: 8 }}>
+                          {broken ? (
+                            <button
+                              onClick={() => normalizeStation(link.sourceStationId)}
+                              style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+                            >
+                              ✓ Normalizar esta conexão
+                            </button>
+                          ) : (
+                            <button
+                              onClick={async () => {
+                                const active = simulationResult?.removedConnectionIds ?? [];
+                                await api.post('/simulations', { connectionIds: [...new Set([...active, link.id])] });
+                              }}
+                              style={{ width: '100%', padding: '7px', background: '#ef4444', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+                            >
+                              ⚡ Simular Rompimento
+                            </button>
+                          )}
                         </div>
                       </div>
                     </Popup>
@@ -483,9 +512,6 @@ export function GeoMapPage() {
               );
             })}
           </MapContainer>
-        </div>
-
-        <ImpactPanel result={simulationResult} />
       </div>
     </div>
   );

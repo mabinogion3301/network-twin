@@ -2,19 +2,18 @@ import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nes
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { PrismaService } from '../../prisma.module';
+import { EventsGateway } from '../../modules/events-gateway/events.gateway';
 
-/**
- * Intercepta toda mutação (POST/PATCH/PUT/DELETE) feita nos controllers que
- * expõem metadata `auditEntity` (ver decorator @AuditEntity) e grava um
- * registro em AuditLog com quem fez, o quê, e o resultado da operação.
- *
- * Não tenta computar diff campo-a-campo (isso exigiria carregar o estado
- * anterior em todo update) — guarda o payload enviado e o resultado retornado,
- * o que já é suficiente para auditoria/rastreabilidade.
- */
+// Entidades cujas mutações devem disparar topology:changed para recarregar
+// o mapa e o dashboard em todos os clientes conectados.
+const TOPOLOGY_ENTITIES = new Set(['Stations', 'Equipments', 'Ports', 'Connections', 'StationLinks']);
+
 @Injectable()
 export class AuditLogInterceptor implements NestInterceptor {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private eventsGateway: EventsGateway,
+  ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
@@ -30,11 +29,12 @@ export class AuditLogInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       tap((result) => {
-        if (!user?.sub) return; // sem usuário autenticado, não há o que auditar (ex.: login)
+        if (!user?.sub) return;
 
         const action = method === 'POST' ? 'CREATE' : method === 'DELETE' ? 'DELETE' : 'UPDATE';
         const entityId = result?.id ?? paramId ?? 'unknown';
 
+        // Grava auditoria — fire-and-forget
         this.prisma.auditLog
           .create({
             data: {
@@ -45,10 +45,12 @@ export class AuditLogInterceptor implements NestInterceptor {
               diffJson: { input: body ?? null, result: result ?? null },
             },
           })
-          .catch((err) => {
-            // auditoria nunca deve quebrar a resposta principal ao usuário
-            console.error('Falha ao gravar AuditLog:', err);
-          });
+          .catch((err) => console.error('Falha ao gravar AuditLog:', err));
+
+        // Notifica todos os clientes WebSocket para recarregar o mapa/dashboard
+        if (TOPOLOGY_ENTITIES.has(entityType)) {
+          this.eventsGateway.broadcastTopologyChanged();
+        }
       }),
     );
   }

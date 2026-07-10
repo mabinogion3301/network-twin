@@ -2,10 +2,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.module';
 import { CreateStationDto, StationQueryDto, UpdateStationDto } from './dto/station.dto';
 import { handlePrismaDeleteError } from '../../common/utils/prisma-errors.util';
+import { EventsGateway } from '../events-gateway/events.gateway';
 
 @Injectable()
 export class StationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private events: EventsGateway) {}
 
   findAll(query: StationQueryDto) {
     return this.prisma.station.findMany({
@@ -28,27 +29,30 @@ export class StationsService {
     return station;
   }
 
-  create(dto: CreateStationDto) {
-    return this.prisma.station.create({ data: dto });
+  async create(dto: CreateStationDto) {
+    const result = await this.prisma.station.create({ data: dto });
+    this.events.broadcastTopologyChanged();
+    return result;
   }
 
   async update(id: string, dto: UpdateStationDto) {
     await this.ensureExists(id);
-    return this.prisma.station.update({ where: { id }, data: dto });
+    const result = await this.prisma.station.update({ where: { id }, data: dto });
+    this.events.broadcastTopologyChanged();
+    return result;
   }
 
   async remove(id: string) {
     await this.ensureExists(id);
     try {
-      return await this.prisma.$transaction(async (tx) => {
-        // StationLink é só um vínculo lógico (não é inventário físico), então
-        // é seguro remover automaticamente. Equipamentos continuam bloqueando
-        // a exclusão de propósito — são dados de inventário reais.
+      const result = await this.prisma.$transaction(async (tx) => {
         await tx.stationLink.deleteMany({
           where: { OR: [{ stationAId: id }, { stationBId: id }] },
         });
         return tx.station.delete({ where: { id } });
       });
+      this.events.broadcastTopologyChanged();
+      return result;
     } catch (error) {
       handlePrismaDeleteError(error, 'estação');
     }

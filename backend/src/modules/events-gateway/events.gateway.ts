@@ -22,21 +22,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.logger.log(`Cliente desconectado: ${client.id}`);
   }
 
-  /**
-   * Disparado pelo SimulationsService sempre que uma simulação de falha é
-   * executada. O frontend escuta esse evento para atualizar o mapa de TODOS
-   * os usuários conectados, sem precisar de refresh.
-   */
   broadcastSimulationResult(payload: unknown) {
     this.server.emit('simulation:result', payload);
   }
 
   /**
-   * Disparado quando o status de uma entidade muda via CRUD comum (ex:
-   * estação marcada como Manutenção manualmente) — mantém o mapa sincronizado
-   * mesmo fora de uma simulação.
+   * Disparado sempre que Estação, Equipamento ou Conexão é criado/editado/
+   * excluído — faz o mapa e o dashboard de todos os usuários recarregarem.
    */
-  broadcastEntityUpdated(payload: { entityType: string; entityId: string; action: string }) {
-    this.server.emit('entity:updated', payload);
+  broadcastTopologyChanged() {
+    this.server.emit('topology:changed');
   }
 }

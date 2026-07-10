@@ -1,10 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.module';
 import { ConnectionQueryDto, CreateConnectionDto, UpdateConnectionDto } from './dto/connection.dto';
+import { EventsGateway } from '../events-gateway/events.gateway';
 
 @Injectable()
 export class ConnectionsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private events: EventsGateway) {}
 
   findAll(query: ConnectionQueryDto) {
     return this.prisma.connection.findMany({
@@ -48,17 +49,23 @@ export class ConnectionsService {
     await this.ensurePortFree(dto.sourcePortId);
     await this.ensurePortFree(dto.targetPortId);
 
-    return this.prisma.connection.create({ data: dto });
+    const result = await this.prisma.connection.create({ data: dto });
+    this.events.broadcastTopologyChanged();
+    return result;
   }
 
   async update(id: string, dto: UpdateConnectionDto) {
     await this.ensureExists(id);
-    return this.prisma.connection.update({ where: { id }, data: dto });
+    const result = await this.prisma.connection.update({ where: { id }, data: dto });
+    this.events.broadcastTopologyChanged();
+    return result;
   }
 
   async remove(id: string) {
     await this.ensureExists(id);
-    return this.prisma.connection.delete({ where: { id } });
+    const result = await this.prisma.connection.delete({ where: { id } });
+    this.events.broadcastTopologyChanged();
+    return result;
   }
 
   // Uma porta só pode estar em uma conexão ativa por vez (origem ou destino)

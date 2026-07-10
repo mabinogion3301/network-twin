@@ -1,10 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.module';
 import { CreateEquipmentDto, EquipmentQueryDto, UpdateEquipmentDto } from './dto/equipment.dto';
+import { EventsGateway } from '../events-gateway/events.gateway';
 
 @Injectable()
 export class EquipmentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private events: EventsGateway) {}
 
   findAll(query: EquipmentQueryDto) {
     return this.prisma.equipment.findMany({
@@ -35,51 +36,41 @@ export class EquipmentsService {
 
   async create(dto: CreateEquipmentDto) {
     const { portCount, ...data } = dto;
-
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const equipment = await tx.equipment.create({ data: { ...data, portCount: portCount ?? 0 } });
-
-      // Auto-criação de portas: evita trabalho manual de cadastrar porta a
-      // porta sempre que um equipamento novo é registrado.
       if (portCount && portCount > 0) {
         await tx.port.createMany({
           data: Array.from({ length: portCount }, (_, i) => ({
-            equipmentId: equipment.id,
-            number: i + 1,
-            type: 'RJ45' as const,
+            equipmentId: equipment.id, number: i + 1, type: 'RJ45' as const,
           })),
         });
       }
-
       return tx.equipment.findUnique({ where: { id: equipment.id }, include: { ports: true } });
     });
+    this.events.broadcastTopologyChanged();
+    return result;
   }
 
   async update(id: string, dto: UpdateEquipmentDto) {
     await this.ensureExists(id);
-    return this.prisma.equipment.update({ where: { id }, data: dto });
+    const result = await this.prisma.equipment.update({ where: { id }, data: dto });
+    this.events.broadcastTopologyChanged();
+    return result;
   }
 
   async remove(id: string) {
     await this.ensureExists(id);
-
-    // Um equipamento sempre tem portas, e as portas podem ter conexões.
-    // Excluir o equipamento sem cuidar disso quebraria por chave estrangeira.
-    // Como portas/conexões só existem em função do equipamento, é seguro
-    // (e o comportamento esperado pelo usuário) excluir tudo em cascata aqui.
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const ports = await tx.port.findMany({ where: { equipmentId: id }, select: { id: true } });
       const portIds = ports.map((p) => p.id);
-
       if (portIds.length > 0) {
-        await tx.connection.deleteMany({
-          where: { OR: [{ sourcePortId: { in: portIds } }, { targetPortId: { in: portIds } }] },
-        });
+        await tx.connection.deleteMany({ where: { OR: [{ sourcePortId: { in: portIds } }, { targetPortId: { in: portIds } }] } });
         await tx.port.deleteMany({ where: { equipmentId: id } });
       }
-
       return tx.equipment.delete({ where: { id } });
     });
+    this.events.broadcastTopologyChanged();
+    return result;
   }
 
   private async ensureExists(id: string) {
