@@ -1,12 +1,10 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards/auth.guards';
 import { Permissions } from '../../common/decorators/auth.decorators';
-import { AuditLogInterceptor } from '../../common/interceptors/audit-log.interceptor';
 import { ManufacturersService } from './manufacturers.service';
 import { CreateManufacturerDto, UpdateManufacturerDto } from './dto/manufacturer.dto';
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@UseInterceptors(AuditLogInterceptor)
 @Controller('manufacturers')
 export class ManufacturersController {
   constructor(private service: ManufacturersService) {}

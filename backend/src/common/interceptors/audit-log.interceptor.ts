@@ -4,8 +4,6 @@ import { tap } from 'rxjs/operators';
 import { PrismaService } from '../../prisma.module';
 import { EventsGateway } from '../../modules/events-gateway/events.gateway';
 
-// Entidades cujas mutações devem disparar topology:changed para recarregar
-// o mapa e o dashboard em todos os clientes conectados.
 const TOPOLOGY_ENTITIES = new Set(['Stations', 'Equipments', 'Ports', 'Connections', 'StationLinks']);
 
 @Injectable()
@@ -18,9 +16,7 @@ export class AuditLogInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
     const method = request.method as string;
-    const mutating = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(method);
-
-    if (!mutating) return next.handle();
+    if (!['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) return next.handle();
 
     const entityType = context.getClass().name.replace('Controller', '');
     const user = request.user;
@@ -30,24 +26,13 @@ export class AuditLogInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap((result) => {
         if (!user?.sub) return;
-
         const action = method === 'POST' ? 'CREATE' : method === 'DELETE' ? 'DELETE' : 'UPDATE';
         const entityId = result?.id ?? paramId ?? 'unknown';
 
-        // Grava auditoria — fire-and-forget
         this.prisma.auditLog
-          .create({
-            data: {
-              entityType,
-              entityId,
-              action,
-              userId: user.sub,
-              diffJson: { input: body ?? null, result: result ?? null },
-            },
-          })
+          .create({ data: { entityType, entityId, action, userId: user.sub, diffJson: { input: body ?? null, result: result ?? null } } })
           .catch((err) => console.error('Falha ao gravar AuditLog:', err));
 
-        // Notifica todos os clientes WebSocket para recarregar o mapa/dashboard
         if (TOPOLOGY_ENTITIES.has(entityType)) {
           this.eventsGateway.broadcastTopologyChanged();
         }

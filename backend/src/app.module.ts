@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -19,6 +20,7 @@ import { SimulationsModule } from './modules/simulations/simulations.module';
 import { EventsGatewayModule } from './modules/events-gateway/events-gateway.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { SearchModule } from './modules/search/search.module';
+import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
 
 @Module({
   imports: [
@@ -42,6 +44,15 @@ import { SearchModule } from './modules/search/search.module';
     EventsGatewayModule,
     DashboardModule,
     SearchModule,
+  ],
+  providers: [
+    // Registra o AuditLogInterceptor globalmente — assim ele tem acesso a
+    // PrismaService (global) e EventsGateway (via EventsGatewayModule acima)
+    // sem precisar ser declarado em cada módulo individualmente.
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditLogInterceptor,
+    },
   ],
 })
 export class AppModule {}
