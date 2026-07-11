@@ -6,6 +6,7 @@ import { ManufacturersController } from './manufacturers.controller';
 @Module({
   imports: [EventsGatewayModule, ],
   controllers: [ManufacturersController],
+  providers: [ManufacturersService],
   exports: [ManufacturersService],
 })
 export class ManufacturersModule {}

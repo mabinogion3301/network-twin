@@ -6,5 +6,6 @@ import { StationLinksController } from './station-links.controller';
 @Module({
   imports: [EventsGatewayModule, ],
   controllers: [StationLinksController],
+  providers: [StationLinksService],
 })
 export class StationLinksModule {}

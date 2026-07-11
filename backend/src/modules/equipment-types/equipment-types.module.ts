@@ -6,6 +6,7 @@ import { EquipmentTypesController } from './equipment-types.controller';
 @Module({
   imports: [EventsGatewayModule, ],
   controllers: [EquipmentTypesController],
+  providers: [EquipmentTypesService],
   exports: [EquipmentTypesService],
 })
 export class EquipmentTypesModule {}

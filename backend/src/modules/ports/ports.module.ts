@@ -6,5 +6,6 @@ import { PortsController } from './ports.controller';
 @Module({
   imports: [EventsGatewayModule, ],
   controllers: [PortsController],
+  providers: [PortsService],
 })
 export class PortsModule {}

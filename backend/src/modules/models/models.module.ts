@@ -6,6 +6,7 @@ import { ModelsController } from './models.controller';
 @Module({
   imports: [EventsGatewayModule, ],
   controllers: [ModelsController],
+  providers: [ModelsService],
   exports: [ModelsService],
 })
 export class ModelsModule {}

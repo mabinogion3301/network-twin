@@ -6,5 +6,6 @@ import { EventsGatewayModule } from '../events-gateway/events-gateway.module';
 @Module({
   imports: [EventsGatewayModule],
   controllers: [EquipmentsController],
+  providers: [EquipmentsService],
 })
 export class EquipmentsModule {}
