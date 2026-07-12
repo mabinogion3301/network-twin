@@ -77,9 +77,6 @@ model Station {
   notes       String?
   // Trechos operacionais — agrupa estações por segmento de rede para
   // identificar impacto operacional esperado em simulações de rompimento.
-  trechos     String[]
-  // Trechos operacionais aos quais esta estação pertence.
-  // Usado para identificar impacto operacional em simulações de rompimento.
   trechos     String[] @default([])
   status      StationStatus @default(ONLINE)
   equipments  Equipment[]
