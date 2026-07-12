@@ -16,6 +16,7 @@ interface GeoStation {
   latitude: number | null;
   longitude: number | null;
   status: string;
+  trechos: string[];
 }
 
 interface GeoLink {
@@ -72,11 +73,12 @@ export const CONNECTION_TYPE_STYLES: Record<string, { label: string; color: stri
 
 // Cores do RESULTADO de uma simulação de falha (têm prioridade sobre a cor
 // do tipo de conexão enquanto o resultado estiver ativo):
-const BROKEN_COLOR = '#ef4444'; // rompido / sem comunicação
-const DEGRADED_COLOR = '#eab308'; // atenuado (perdeu redundância, mas ainda tem >1 caminho)
+const BROKEN_COLOR = '#ef4444';    // rompido / sem comunicação
+const DEGRADED_COLOR = '#eab308';  // atenuado (perdeu redundância, mas ainda tem >1 caminho)
 const SATURATING_COLOR = '#3b82f6'; // saturando (tinha 3+ links, ficou com só 1)
+const TRECHO_COLOR = '#7c3aed';    // impactado por trecho — roxo pulsante
 
-type StationVisualState = 'broken' | 'saturating' | 'degraded' | 'normal';
+type StationVisualState = 'broken' | 'saturating' | 'degraded' | 'trecho_impact' | 'normal';
 
 function towerIcon(color: string, pulsing: boolean) {
   const html = `
@@ -253,6 +255,7 @@ export function GeoMapPage() {
     if (state === 'broken') return BROKEN_COLOR;
     if (state === 'saturating') return SATURATING_COLOR;
     if (state === 'degraded') return DEGRADED_COLOR;
+    if (state === 'trecho_impact') return TRECHO_COLOR;
     return fallback;
   }
 

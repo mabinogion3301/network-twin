@@ -174,6 +174,7 @@ export class TopologyService {
         latitude: s.latitude,
         longitude: s.longitude,
         status: s.status,
+        trechos: s.trechos ?? [],
       })),
       links: interStationLinks,
     };
