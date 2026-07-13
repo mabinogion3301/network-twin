@@ -234,6 +234,38 @@ export function GeoMapPage() {
     (simulationResult?.unavailableStationPairs ?? []).flatMap((p) => [p.stationAId, p.stationBId]),
   );
 
+  // Calcula estações impactadas por trecho:
+  // 1. Encontra os links rompidos e pega as estações de cada ponta
+  // 2. Coleta todos os trechos dessas estações
+  // 3. Marca todas as outras estações que compartilham algum desses trechos
+  const trechoImpactedStationIds = (() => {
+    if (!simulationResult || removedConnectionIds.size === 0) return new Set<string>();
+
+    const brokenLinks = links.filter((l) => removedConnectionIds.has(l.id));
+    const directlyAffectedStationIds = new Set(
+      brokenLinks.flatMap((l) => [l.sourceStationId, l.targetStationId])
+    );
+
+    // Trechos das estações diretamente afetadas pelo rompimento
+    const affectedTrechos = new Set<string>();
+    for (const stId of directlyAffectedStationIds) {
+      const st = stationById[stId];
+      if (st?.trechos) st.trechos.forEach((t) => affectedTrechos.add(t));
+    }
+
+    if (affectedTrechos.size === 0) return new Set<string>();
+
+    // Demais estações que pertencem a qualquer um desses trechos
+    const impacted = new Set<string>();
+    for (const st of stations) {
+      if (directlyAffectedStationIds.has(st.id)) continue; // já marcada como rompida/atenuada
+      if (st.trechos?.some((t) => affectedTrechos.has(t))) {
+        impacted.add(st.id);
+      }
+    }
+    return impacted;
+  })();
+
   function computeDegrees(stationId: string) {
     const touching = links.filter((l) => l.sourceStationId === stationId || l.targetStationId === stationId);
     const original = touching.length;
@@ -248,6 +280,11 @@ export function GeoMapPage() {
     const { original, remaining } = computeDegrees(station.id);
     if (original >= 3 && remaining === 1) return 'saturating';
     if (remaining < original) return 'degraded';
+
+    // Impacto por trecho: não perdeu conectividade, mas pertence ao mesmo
+    // trecho operacional de uma estação cujo enlace foi rompido
+    if (trechoImpactedStationIds.has(station.id)) return 'trecho_impact';
+
     return 'normal';
   }
 
@@ -303,6 +340,7 @@ export function GeoMapPage() {
             <Legend color={BROKEN_COLOR} label="Rompido" />
             <Legend color={DEGRADED_COLOR} label="Atenuado" />
             <Legend color={SATURATING_COLOR} label="Saturando" />
+            <Legend color={TRECHO_COLOR} label="Impactado por Trecho" />
           </div>
           <button
             onClick={normalizeAll}
@@ -432,7 +470,7 @@ export function GeoMapPage() {
             {stationsWithCoords.map((station) => {
               const state = stationVisualState(station);
               const color = colorForState(state, STATUS_COLORS[station.status] ?? '#94a3b8');
-              const pulsing = state === 'broken';
+              const pulsing = state === 'broken' || state === 'trecho_impact';
               const touchingTypes = typesTouchingStation(station.id);
 
               return (
@@ -465,7 +503,17 @@ export function GeoMapPage() {
                         ? 'SATURANDO (restou só 1 link)'
                         : state === 'degraded'
                           ? 'ATENUADO (perdeu redundância)'
-                          : station.status}
+                          : state === 'trecho_impact'
+                            ? 'IMPACTADO POR TRECHO (possível geração de alarmes)'
+                            : station.status}
+
+                    {station.trechos && station.trechos.length > 0 && (
+                      <>
+                        <br />
+                        <strong style={{ fontSize: 12 }}>Trechos:</strong>{' '}
+                        <span style={{ fontSize: 12, color: '#a78bfa' }}>{station.trechos.join(', ')}</span>
+                      </>
+                    )}
 
                     {touchingTypes.length > 0 && (
                       <>

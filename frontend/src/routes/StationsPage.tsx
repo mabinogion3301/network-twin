@@ -277,7 +277,7 @@ function StationModal({ station, onClose, onSaved }: any) {
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setErr('');
     try {
-      const trechos = f.trechosInput.split(',').map(t => t.trim()).filter(Boolean);
+      const trechos = f.trechosInput.split(',').map((t: string) => t.trim()).filter(Boolean);
       const payload = { ...f, trechos, latitude: f.latitude ? Number(f.latitude) : undefined, longitude: f.longitude ? Number(f.longitude) : undefined };
       const saved = station ? await stationsApi.update(station.id, payload) : await stationsApi.create(payload);
       onSaved(saved);
@@ -304,7 +304,7 @@ function StationModal({ station, onClose, onSaved }: any) {
         <input style={inp} value={f.trechosInput} onChange={e => setF({ ...f, trechosInput: e.target.value })} placeholder="Campo Grande, MT Sul, Cuiabá Norte" />
         {f.trechosInput && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
-            {f.trechosInput.split(',').map(t => t.trim()).filter(Boolean).map((t, i) => (
+            {f.trechosInput.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string, i: number) => (
               <span key={i} style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#a78bfa' }}>{t}</span>
             ))}
           </div>
