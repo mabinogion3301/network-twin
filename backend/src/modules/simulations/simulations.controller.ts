@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards/auth.guards';
 import { Permissions, CurrentUser } from '../../common/decorators/auth.decorators';
 import { SimulationsService } from './simulations.service';
@@ -32,5 +32,11 @@ export class SimulationsController {
   @Permissions('simulations.read')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
+  }
+
+  @Patch(':id/notes')
+  @Permissions('simulations.run')
+  updateNotes(@Param('id') id: string, @Body() body: { notes: string }) {
+    return this.service.updateNotes(id, body.notes);
   }
 }

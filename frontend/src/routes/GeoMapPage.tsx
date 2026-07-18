@@ -158,6 +158,9 @@ export function GeoMapPage() {
   const [loading, setLoading] = useState(true);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
   const [zoom, setZoom] = useState(INITIAL_ZOOM);
+  const [noteText, setNoteText] = useState('');
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteSaving, setNoteSaving] = useState(false);
 
   function load() {
     setLoading(true);
@@ -390,9 +393,9 @@ export function GeoMapPage() {
                 const idx = pairIndex[link.id] ?? 0;
 
                 // Distribui os links simetricamente ao redor do centro:
-                // ex: 2 links → offsets [-15000, +15000]m
-                //     3 links → [-20000, 0, +20000]m
-                const SPACING = 15000; // metros entre cada linha paralela
+                // ex: 2 links → offsets [-3000, +3000]m
+                //     3 links → [-4000, 0, +4000]m
+                const SPACING = 3000; // metros entre cada linha paralela
                 const offsetMeters = total > 1
                   ? (idx - (total - 1) / 2) * SPACING
                   : 0;

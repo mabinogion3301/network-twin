@@ -122,6 +122,26 @@ export class SimulationsService {
   async getCurrentState() {
     const latest = await this.prisma.failureSimulation.findFirst({ orderBy: { createdAt: 'desc' } });
     if (!latest) return null;
-    return { simulationId: latest.id, ...(latest.resultJson as Record<string, unknown>) };
+    return {
+      simulationId: latest.id,
+      notes: latest.notes ?? '',
+      ...(latest.resultJson as Record<string, unknown>),
+    };
+  }
+
+  async updateNotes(id: string, notes: string) {
+    const updated = await this.prisma.failureSimulation.update({
+      where: { id },
+      data: { notes },
+    });
+    // Transmite a nota para todos os clientes via WebSocket — assim todos
+    // veem a anotação em tempo real sem precisar de F5.
+    const result = {
+      simulationId: updated.id,
+      notes: updated.notes ?? '',
+      ...(updated.resultJson as Record<string, unknown>),
+    };
+    this.eventsGateway.broadcastSimulationResult(result);
+    return result;
   }
 }

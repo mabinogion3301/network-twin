@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 
 export interface SimulationResult {
   simulationId: string;
+  notes?: string;
   removedConnectionIds: string[];
   removedEquipmentIds: string[];
   unavailableStationPairs: Array<{

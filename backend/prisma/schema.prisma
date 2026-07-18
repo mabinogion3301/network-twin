@@ -226,5 +226,7 @@ model FailureSimulation {
   removedConnectionIds String[]
   removedEquipmentIds  String[]
   resultJson           Json
+  notes                String?
+  updatedAt            DateTime @updatedAt
   createdAt            DateTime @default(now())
 }
