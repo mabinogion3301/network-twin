@@ -180,7 +180,10 @@ export function GeoMapPage() {
   // mesmo que ela ainda esteja ativa no banco para todos os outros usuários.
   useEffect(() => {
     simulationsApi.current().then((result) => {
-      if (result) setSimulationResult(result as SimulationResult);
+      if (result) {
+        setSimulationResult(result as SimulationResult);
+        setNoteText((result as SimulationResult).notes ?? '');
+      }
     });
   }, []);
 
@@ -188,12 +191,24 @@ export function GeoMapPage() {
   // simulação, todos recebem o resultado aqui via WebSocket — sem F5.
   const handleSimulationResult = useCallback((result: SimulationResult) => {
     setSimulationResult(result);
+    setNoteText(result.notes ?? '');
   }, []);
 
   // Quando qualquer usuário cria/edita/remove estação, equipamento ou
   // conexão, o backend emite 'topology:changed' e recarregamos o mapa aqui
   // — garante que todos os PCs vejam a topologia sempre atualizada.
   const handleTopologyChanged = useCallback(() => { load(); }, []);
+
+  async function saveNote() {
+    if (!simulationResult?.simulationId) return;
+    setNoteSaving(true);
+    try {
+      await api.patch(`/simulations/${simulationResult.simulationId}/notes`, { notes: noteText });
+      // O WebSocket vai transmitir o resultado atualizado para todos
+    } finally {
+      setNoteSaving(false);
+    }
+  }
 
   useWebSocket(handleSimulationResult, handleTopologyChanged);
 
@@ -350,6 +365,37 @@ export function GeoMapPage() {
             style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-hi)', borderRadius: 'var(--radius)', padding: '4px 10px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-mono)', flexShrink: 0 }}
           >
             ✓ Normalizar tudo
+          </button>
+          <button
+            onClick={() => setNoteOpen(!noteOpen)}
+            style={{ background: noteOpen ? 'var(--accent-dim)' : 'var(--bg-hover)', border: `1px solid ${noteOpen ? 'var(--accent)' : 'var(--border-hi)'}`, borderRadius: 'var(--radius)', padding: '4px 10px', color: noteOpen ? 'var(--accent)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-mono)', flexShrink: 0 }}
+          >
+            📝 {simulationResult.notes ? 'Ver nota' : 'Adicionar nota'}
+          </button>
+        </div>
+      )}
+
+      {/* Painel de notas — aparece abaixo da barra quando aberto */}
+      {simulationResult && noteOpen && (simulationResult.removedConnectionIds?.length ?? 0) > 0 && (
+        <div style={{ padding: '10px 20px', background: 'rgba(59,130,246,0.06)', borderBottom: '1px solid rgba(59,130,246,0.15)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', paddingTop: 8, flexShrink: 0 }}>NOTA</span>
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Ex: Equipe acionada às 14h, fibra rompida no km 47, previsão de retorno 18h..."
+            rows={2}
+            style={{
+              flex: 1, background: 'var(--bg-base)', border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)', color: 'var(--text-primary)', fontSize: 12,
+              padding: '6px 10px', resize: 'vertical', fontFamily: 'var(--font-ui)',
+            }}
+          />
+          <button
+            onClick={saveNote}
+            disabled={noteSaving}
+            style={{ padding: '6px 14px', background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: noteSaving ? 'not-allowed' : 'pointer', flexShrink: 0, opacity: noteSaving ? 0.7 : 1 }}
+          >
+            {noteSaving ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
       )}
