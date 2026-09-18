@@ -37,6 +37,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Filtro escuro aplicado sobre as tiles do OpenStreetMap —
+   inverte as cores e satura menos, dando aspecto dark sem precisar
+   de um tile provider pago. */
+.map-tiles-dark {
+  filter: invert(1) hue-rotate(180deg) brightness(0.75) saturate(0.5);
+}
+
 /* Leaflet tooltip - tema escuro */
 .station-name-tooltip {
   background: var(--bg-panel) !important;
