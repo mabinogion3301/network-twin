@@ -364,8 +364,9 @@ export function GeoMapPage() {
         <MapContainer center={BRAZIL_CENTER} zoom={INITIAL_ZOOM} style={{ height: '100%', width: '100%', background: 'var(--bg-base)' }}>
             <ZoomTracker onZoomChange={setZoom} />
             <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              maxZoom={20}
             />
 
             {(() => {
