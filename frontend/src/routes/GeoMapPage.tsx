@@ -364,10 +364,10 @@ export function GeoMapPage() {
         <MapContainer center={BRAZIL_CENTER} zoom={INITIAL_ZOOM} style={{ height: '100%', width: '100%', background: 'var(--bg-base)' }}>
             <ZoomTracker onZoomChange={setZoom} />
             <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              className="map-tiles-dark"
-            />
+  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  className="map-tiles-dark"
+/>
 
             {(() => {
               // Agrupa links pelo par de estações (ordem canônica A<B para
