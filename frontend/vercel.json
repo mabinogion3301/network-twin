@@ -1,5 +1,4 @@
 {
-  "buildCommand": "vite build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install"
+  "installCommand": "yarn install",
+  "buildCommand": "yarn build"
 }
