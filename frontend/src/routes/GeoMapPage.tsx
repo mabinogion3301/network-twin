@@ -286,7 +286,8 @@ export function GeoMapPage() {
     if (!simulationResult) return 'normal';
 
     // Falha direta: todos os equipamentos da estação foram removidos da simulação
-    if (station.equipmentIds.length > 0 && station.equipmentIds.every(id => removedEquipmentIds.has(id))) {
+    const eqIds = station.equipmentIds ?? [];
+    if (eqIds.length > 0 && eqIds.every(id => removedEquipmentIds.has(id))) {
       return 'broken';
     }
 
@@ -566,17 +567,19 @@ export function GeoMapPage() {
                       simulationResult={simulationResult}
                       onNormalizeStation={() => normalizeStation(station.id)}
                       onNormalizeEquipments={() => {
+                        const stEqIds = station.equipmentIds ?? [];
                         const remaining = (simulationResult?.removedEquipmentIds ?? [])
-                          .filter(id => !station.equipmentIds.includes(id));
+                          .filter(id => !stEqIds.includes(id));
                         normalizeIds(simulationResult?.removedConnectionIds ?? [], remaining);
                       }}
                       onSimulateFailure={async () => {
-                        if (station.equipmentIds.length === 0) return;
+                        const stEqIds = station.equipmentIds ?? [];
+                        if (stEqIds.length === 0) return;
                         const activeConns = simulationResult?.removedConnectionIds ?? [];
                         const activeEqs = simulationResult?.removedEquipmentIds ?? [];
                         await api.post('/simulations', {
                           connectionIds: activeConns,
-                          equipmentIds: [...new Set([...activeEqs, ...station.equipmentIds])],
+                          equipmentIds: [...new Set([...activeEqs, ...stEqIds])],
                         });
                       }}
                     />
@@ -599,9 +602,10 @@ function StationActionPanel({ station, state, simulationResult, onNormalizeStati
   onNormalizeEquipments: () => void;
   onSimulateFailure: () => Promise<void>;
 }) {
+  const eqIds = station.equipmentIds ?? [];
   const [simulating, setSimulating] = useState(false);
-  const isDirectlyFailed = station.equipmentIds.length > 0 &&
-    station.equipmentIds.every(id => (simulationResult?.removedEquipmentIds ?? []).includes(id));
+  const isDirectlyFailed = eqIds.length > 0 &&
+    eqIds.every(id => (simulationResult?.removedEquipmentIds ?? []).includes(id));
 
   async function handleSimulate() {
     setSimulating(true);
@@ -612,7 +616,7 @@ function StationActionPanel({ station, state, simulationResult, onNormalizeStati
   if (state === 'normal') {
     return (
       <div style={{ marginTop: 8 }}>
-        {station.equipmentIds.length > 0 ? (
+        {eqIds.length > 0 ? (
           <button
             onClick={handleSimulate}
             disabled={simulating}
