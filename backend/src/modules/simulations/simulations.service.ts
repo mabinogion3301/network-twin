@@ -129,7 +129,27 @@ export class SimulationsService {
     };
   }
 
-  async updateNotes(id: string, notes: string) {
+  async updateConnectionNote(simulationId: string, connectionId: string, note: string) {
+    const simulation = await this.prisma.failureSimulation.findUnique({ where: { id: simulationId } });
+    if (!simulation) return null;
+
+    const result = simulation.resultJson as Record<string, any>;
+    const connectionNotes = result.connectionNotes ?? {};
+    connectionNotes[connectionId] = note;
+
+    const updated = await this.prisma.failureSimulation.update({
+      where: { id: simulationId },
+      data: { resultJson: { ...result, connectionNotes } },
+    });
+
+    const fullResult = {
+      simulationId: updated.id,
+      notes: updated.notes ?? '',
+      ...(updated.resultJson as Record<string, unknown>),
+    };
+    this.eventsGateway.broadcastSimulationResult(fullResult);
+    return fullResult;
+  }
     const updated = await this.prisma.failureSimulation.update({
       where: { id },
       data: { notes },

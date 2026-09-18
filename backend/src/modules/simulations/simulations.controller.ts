@@ -39,4 +39,13 @@ export class SimulationsController {
   updateNotes(@Param('id') id: string, @Body() body: { notes: string }) {
     return this.service.updateNotes(id, body.notes);
   }
+
+  @Patch(':id/connection-note')
+  @Permissions('simulations.run')
+  updateConnectionNote(
+    @Param('id') id: string,
+    @Body() body: { connectionId: string; note: string },
+  ) {
+    return this.service.updateConnectionNote(id, body.connectionId, body.note);
+  }
 }

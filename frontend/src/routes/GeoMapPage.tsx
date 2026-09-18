@@ -158,9 +158,6 @@ export function GeoMapPage() {
   const [loading, setLoading] = useState(true);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
   const [zoom, setZoom] = useState(INITIAL_ZOOM);
-  const [noteText, setNoteText] = useState('');
-  const [noteOpen, setNoteOpen] = useState(false);
-  const [noteSaving, setNoteSaving] = useState(false);
 
   function load() {
     setLoading(true);
@@ -180,10 +177,7 @@ export function GeoMapPage() {
   // mesmo que ela ainda esteja ativa no banco para todos os outros usuários.
   useEffect(() => {
     simulationsApi.current().then((result) => {
-      if (result) {
-        setSimulationResult(result as SimulationResult);
-        setNoteText((result as SimulationResult).notes ?? '');
-      }
+      if (result) setSimulationResult(result as SimulationResult);
     });
   }, []);
 
@@ -191,24 +185,12 @@ export function GeoMapPage() {
   // simulação, todos recebem o resultado aqui via WebSocket — sem F5.
   const handleSimulationResult = useCallback((result: SimulationResult) => {
     setSimulationResult(result);
-    setNoteText(result.notes ?? '');
   }, []);
 
   // Quando qualquer usuário cria/edita/remove estação, equipamento ou
   // conexão, o backend emite 'topology:changed' e recarregamos o mapa aqui
   // — garante que todos os PCs vejam a topologia sempre atualizada.
   const handleTopologyChanged = useCallback(() => { load(); }, []);
-
-  async function saveNote() {
-    if (!simulationResult?.simulationId) return;
-    setNoteSaving(true);
-    try {
-      await api.patch(`/simulations/${simulationResult.simulationId}/notes`, { notes: noteText });
-      // O WebSocket vai transmitir o resultado atualizado para todos
-    } finally {
-      setNoteSaving(false);
-    }
-  }
 
   useWebSocket(handleSimulationResult, handleTopologyChanged);
 
@@ -366,37 +348,6 @@ export function GeoMapPage() {
           >
             ✓ Normalizar tudo
           </button>
-          <button
-            onClick={() => setNoteOpen(!noteOpen)}
-            style={{ background: noteOpen ? 'var(--accent-dim)' : 'var(--bg-hover)', border: `1px solid ${noteOpen ? 'var(--accent)' : 'var(--border-hi)'}`, borderRadius: 'var(--radius)', padding: '4px 10px', color: noteOpen ? 'var(--accent)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-mono)', flexShrink: 0 }}
-          >
-            📝 {simulationResult.notes ? 'Ver nota' : 'Adicionar nota'}
-          </button>
-        </div>
-      )}
-
-      {/* Painel de notas — aparece abaixo da barra quando aberto */}
-      {simulationResult && noteOpen && (simulationResult.removedConnectionIds?.length ?? 0) > 0 && (
-        <div style={{ padding: '10px 20px', background: 'rgba(59,130,246,0.06)', borderBottom: '1px solid rgba(59,130,246,0.15)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', paddingTop: 8, flexShrink: 0 }}>NOTA</span>
-          <textarea
-            value={noteText}
-            onChange={(e) => setNoteText(e.target.value)}
-            placeholder="Ex: Equipe acionada às 14h, fibra rompida no km 47, previsão de retorno 18h..."
-            rows={2}
-            style={{
-              flex: 1, background: 'var(--bg-base)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius)', color: 'var(--text-primary)', fontSize: 12,
-              padding: '6px 10px', resize: 'vertical', fontFamily: 'var(--font-ui)',
-            }}
-          />
-          <button
-            onClick={saveNote}
-            disabled={noteSaving}
-            style={{ padding: '6px 14px', background: 'var(--accent)', border: 'none', borderRadius: 'var(--radius)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: noteSaving ? 'not-allowed' : 'pointer', flexShrink: 0, opacity: noteSaving ? 0.7 : 1 }}
-          >
-            {noteSaving ? 'Salvando...' : 'Salvar'}
-          </button>
         </div>
       )}
 
@@ -489,16 +440,22 @@ export function GeoMapPage() {
                             {broken ? '⚠ ROMPIDO' : link.status}
                           </span>
                         </div>
-                        {/* Ação */}
-                        <div style={{ marginTop: 8 }}>
-                          {broken ? (
-                            <button
-                              onClick={() => normalizeStation(link.sourceStationId)}
-                              style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-                            >
-                              ✓ Normalizar esta conexão
-                            </button>
-                          ) : (
+                        {/* Ações e nota — só para conexões rompidas */}
+                        {broken ? (
+                          <ConnectionNotePanel
+                            link={link}
+                            simulationResult={simulationResult}
+                            onNormalize={async () => {
+                              const remaining = (simulationResult?.removedConnectionIds ?? []).filter(id => id !== link.id);
+                              await normalizeIds(remaining);
+                            }}
+                            onSaveNote={async (note: string) => {
+                              if (!simulationResult?.simulationId) return;
+                              await api.patch(`/simulations/${simulationResult.simulationId}/connection-note`, { connectionId: link.id, note });
+                            }}
+                          />
+                        ) : (
+                          <div style={{ marginTop: 8 }}>
                             <button
                               onClick={async () => {
                                 const active = simulationResult?.removedConnectionIds ?? [];
@@ -508,8 +465,8 @@ export function GeoMapPage() {
                             >
                               ⚡ Simular Rompimento
                             </button>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     </Popup>
                   </Polyline>
@@ -613,6 +570,54 @@ export function GeoMapPage() {
               );
             })}
           </MapContainer>
+      </div>
+    </div>
+  );
+}
+
+// Painel de nota + normalizar dentro do popup de uma conexão rompida.
+// Usa estado local para evitar re-renders do mapa inteiro ao digitar.
+function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote }: {
+  link: any;
+  simulationResult: SimulationResult | null;
+  onNormalize: () => Promise<void>;
+  onSaveNote: (note: string) => Promise<void>;
+}) {
+  const [note, setNote] = useState(simulationResult?.connectionNotes?.[link.id] ?? '');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    await onSaveNote(note);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <div style={{ marginTop: 10, borderTop: '1px solid #1e293b', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <textarea
+        value={note}
+        onChange={(e) => { setNote(e.target.value); setSaved(false); }}
+        placeholder="Anotação: equipe acionada, previsão de retorno..."
+        rows={2}
+        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 6, color: '#e2e8f0', fontSize: 11, padding: '5px 8px', resize: 'vertical', fontFamily: 'sans-serif' }}
+      />
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{ flex: 1, padding: '6px', background: saved ? '#10b981' : '#3b82f6', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 11, cursor: 'pointer' }}
+        >
+          {saving ? 'Salvando...' : saved ? '✓ Salvo' : '📝 Salvar nota'}
+        </button>
+        <button
+          onClick={onNormalize}
+          style={{ flex: 1, padding: '6px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 11, cursor: 'pointer' }}
+        >
+          ✓ Normalizar
+        </button>
       </div>
     </div>
   );
