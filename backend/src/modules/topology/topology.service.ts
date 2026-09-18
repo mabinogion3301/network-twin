@@ -141,6 +141,18 @@ export class TopologyService {
   async getGeoTopology() {
     const stations = await this.prisma.station.findMany();
 
+    // Carrega equipamentos para incluir IDs por estação (usado na simulação
+    // de falha direta de estação no mapa).
+    const equipments = await this.prisma.equipment.findMany({
+      select: { id: true, stationId: true },
+    });
+    const equipmentsByStation = new Map<string, string[]>();
+    for (const eq of equipments) {
+      const list = equipmentsByStation.get(eq.stationId) ?? [];
+      list.push(eq.id);
+      equipmentsByStation.set(eq.stationId, list);
+    }
+
     const connections = await this.prisma.connection.findMany({
       include: {
         sourcePort: { include: { equipment: true } },
@@ -155,7 +167,6 @@ export class TopologyService {
         name: conn.name,
         sourceStationId: conn.sourcePort.equipment.stationId,
         targetStationId: conn.targetPort.equipment.stationId,
-        // Nomes dos equipamentos que estão nas pontas desta conexão
         sourceEquipmentId: conn.sourcePort.equipmentId,
         sourceEquipmentName: conn.sourcePort.equipment.name,
         targetEquipmentId: conn.targetPort.equipmentId,
@@ -175,6 +186,7 @@ export class TopologyService {
         longitude: s.longitude,
         status: s.status,
         trechos: s.trechos ?? [],
+        equipmentIds: equipmentsByStation.get(s.id) ?? [],
       })),
       links: interStationLinks,
     };

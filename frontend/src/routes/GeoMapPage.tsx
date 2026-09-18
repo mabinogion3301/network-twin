@@ -17,6 +17,7 @@ interface GeoStation {
   longitude: number | null;
   status: string;
   trechos: string[];
+  equipmentIds: string[];
 }
 
 interface GeoLink {
@@ -198,25 +199,32 @@ export function GeoMapPage() {
   // EXATAMENTE como "Romper": chama o mesmo endpoint, que persiste o novo
   // estado e transmite via WebSocket para todos os usuários conectados.
   // A diferença é só que a lista de conexões removidas fica MENOR (ou vazia).
-  async function normalizeIds(remainingIds: string[]) {
+  async function normalizeIds(remainingConnectionIds: string[], remainingEquipmentIds: string[] = []) {
     try {
-      await api.post('/simulations', { connectionIds: remainingIds });
-      // o resultado atualizado chega para todo mundo via WebSocket
+      await api.post('/simulations', {
+        connectionIds: remainingConnectionIds,
+        equipmentIds: remainingEquipmentIds,
+      });
     } catch {
       // falha ao normalizar — estado visual permanece como estava até tentar de novo
     }
   }
 
   function normalizeStation(stationId: string) {
-    const activeIds = simulationResult?.removedConnectionIds ?? [];
+    const activeConns = simulationResult?.removedConnectionIds ?? [];
+    const activeEqs = simulationResult?.removedEquipmentIds ?? [];
     const idsTouchingStation = new Set(
       links.filter((l) => l.sourceStationId === stationId || l.targetStationId === stationId).map((l) => l.id),
     );
-    normalizeIds(activeIds.filter((id) => !idsTouchingStation.has(id)));
+    const stationEqIds = new Set(stationById[stationId]?.equipmentIds ?? []);
+    normalizeIds(
+      activeConns.filter((id) => !idsTouchingStation.has(id)),
+      activeEqs.filter((id) => !stationEqIds.has(id)),
+    );
   }
 
   function normalizeAll() {
-    normalizeIds([]);
+    normalizeIds([], []);
   }
 
   // Arrastar a torre no Mapa do Brasil move a posição GEOGRÁFICA real da estação.
@@ -230,6 +238,7 @@ export function GeoMapPage() {
   const stationById = Object.fromEntries(stations.map((s) => [s.id, s]));
 
   const removedConnectionIds = new Set(simulationResult?.removedConnectionIds ?? []);
+  const removedEquipmentIds = new Set(simulationResult?.removedEquipmentIds ?? []);
   const unavailableStationIds = new Set(
     (simulationResult?.unavailableStationPairs ?? []).flatMap((p) => [p.stationAId, p.stationBId]),
   );
@@ -275,6 +284,12 @@ export function GeoMapPage() {
 
   function stationVisualState(station: GeoStation): StationVisualState {
     if (!simulationResult) return 'normal';
+
+    // Falha direta: todos os equipamentos da estação foram removidos da simulação
+    if (station.equipmentIds.length > 0 && station.equipmentIds.every(id => removedEquipmentIds.has(id))) {
+      return 'broken';
+    }
+
     if (unavailableStationIds.has(station.id)) return 'broken';
 
     const { original, remaining } = computeDegrees(station.id);
@@ -545,32 +560,90 @@ export function GeoMapPage() {
                     )}
 
                     <br />
-                    {state !== 'normal' ? (
-                      <button
-                        onClick={() => normalizeStation(station.id)}
-                        style={{
-                          marginTop: 8,
-                          background: '#22c55e',
-                          border: 'none',
-                          borderRadius: 6,
-                          padding: '6px 12px',
-                          color: 'white',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          width: '100%',
-                        }}
-                      >
-                        ✓ Normalizar esta estação
-                      </button>
-                    ) : (
-                      <em style={{ fontSize: 11 }}>Arraste a torre para ajustar a posição real no mapa.</em>
-                    )}
+                    <StationActionPanel
+                      station={station}
+                      state={state}
+                      simulationResult={simulationResult}
+                      onNormalizeStation={() => normalizeStation(station.id)}
+                      onNormalizeEquipments={() => {
+                        const remaining = (simulationResult?.removedEquipmentIds ?? [])
+                          .filter(id => !station.equipmentIds.includes(id));
+                        normalizeIds(simulationResult?.removedConnectionIds ?? [], remaining);
+                      }}
+                      onSimulateFailure={async () => {
+                        if (station.equipmentIds.length === 0) return;
+                        const activeConns = simulationResult?.removedConnectionIds ?? [];
+                        const activeEqs = simulationResult?.removedEquipmentIds ?? [];
+                        await api.post('/simulations', {
+                          connectionIds: activeConns,
+                          equipmentIds: [...new Set([...activeEqs, ...station.equipmentIds])],
+                        });
+                      }}
+                    />
                   </Popup>
                 </Marker>
               );
             })}
           </MapContainer>
       </div>
+    </div>
+  );
+}
+
+// Painel de ações no popup da estação: simular falha ou normalizar + nota
+function StationActionPanel({ station, state, simulationResult, onNormalizeStation, onNormalizeEquipments, onSimulateFailure }: {
+  station: GeoStation;
+  state: StationVisualState;
+  simulationResult: SimulationResult | null;
+  onNormalizeStation: () => void;
+  onNormalizeEquipments: () => void;
+  onSimulateFailure: () => Promise<void>;
+}) {
+  const [simulating, setSimulating] = useState(false);
+  const isDirectlyFailed = station.equipmentIds.length > 0 &&
+    station.equipmentIds.every(id => (simulationResult?.removedEquipmentIds ?? []).includes(id));
+
+  async function handleSimulate() {
+    setSimulating(true);
+    await onSimulateFailure();
+    setSimulating(false);
+  }
+
+  if (state === 'normal') {
+    return (
+      <div style={{ marginTop: 8 }}>
+        {station.equipmentIds.length > 0 ? (
+          <button
+            onClick={handleSimulate}
+            disabled={simulating}
+            style={{ width: '100%', padding: '7px', background: '#ef4444', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: simulating ? 0.7 : 1 }}
+          >
+            {simulating ? 'Simulando...' : '⚡ Simular Perda de Gerência'}
+          </button>
+        ) : (
+          <em style={{ fontSize: 11, color: '#64748b' }}>Sem equipamentos cadastrados. Arraste para reposicionar.</em>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {isDirectlyFailed ? (
+        <button
+          onClick={onNormalizeEquipments}
+          style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+        >
+          ✓ Normalizar Gerência
+        </button>
+      ) : (
+        <button
+          onClick={onNormalizeStation}
+          style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+        >
+          ✓ Normalizar Estação
+        </button>
+      )}
     </div>
   );
 }
