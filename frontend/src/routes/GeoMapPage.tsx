@@ -201,11 +201,12 @@ export function GeoMapPage() {
   // A diferença é só que a lista de conexões removidas fica MENOR (ou vazia).
   async function normalizeIds(remainingConnectionIds: string[], remainingEquipmentIds: string[] = [], remainingFailedStationIds: string[] = []) {
     try {
-      await api.post('/simulations', {
+      const res = await api.post('/simulations', {
         connectionIds: remainingConnectionIds,
         equipmentIds: remainingEquipmentIds,
         failedStationIds: remainingFailedStationIds,
       });
+      if (res?.data) setSimulationResult(res.data);
     } catch {
       // falha ao normalizar — estado visual permanece como estava até tentar de novo
     }
@@ -484,7 +485,8 @@ export function GeoMapPage() {
                             <button
                               onClick={async () => {
                                 const active = simulationResult?.removedConnectionIds ?? [];
-                                await api.post('/simulations', { connectionIds: [...new Set([...active, link.id])] });
+                                const res = await api.post('/simulations', { connectionIds: [...new Set([...active, link.id])] });
+                                if (res?.data) setSimulationResult(res.data);
                               }}
                               style={{ width: '100%', padding: '7px', background: '#ef4444', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
                             >
@@ -592,13 +594,15 @@ export function GeoMapPage() {
                         const activeEqs = simulationResult?.removedEquipmentIds ?? [];
                         const stEqIds = station.equipmentIds ?? [];
                         const activeFailedStations = simulationResult?.failedStationIds ?? [];
-                        await api.post('/simulations', {
+                        const res = await api.post('/simulations', {
                           connectionIds: activeConns,
                           equipmentIds: stEqIds.length > 0
                             ? [...new Set([...activeEqs, ...stEqIds])]
                             : activeEqs,
                           failedStationIds: [...new Set([...activeFailedStations, station.id])],
                         });
+                        // Atualiza o estado local imediatamente sem esperar o WebSocket
+                        if (res?.data) setSimulationResult(res.data);
                       }}
                     />
                   </Popup>
