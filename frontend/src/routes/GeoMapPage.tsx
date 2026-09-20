@@ -251,14 +251,16 @@ export function GeoMapPage() {
   // 2. Coleta todos os trechos dessas estações
   // 3. Marca todas as outras estações que compartilham algum desses trechos
   const trechoImpactedStationIds = (() => {
-    if (!simulationResult || removedConnectionIds.size === 0) return new Set<string>();
+    if (!simulationResult) return new Set<string>();
+    const hasActivity = removedConnectionIds.size > 0 || (simulationResult.failedStationIds ?? []).length > 0;
+    if (!hasActivity) return new Set<string>();
 
     const brokenLinks = links.filter((l) => removedConnectionIds.has(l.id));
-    const directlyAffectedStationIds = new Set(
-      brokenLinks.flatMap((l) => [l.sourceStationId, l.targetStationId])
-    );
+    const directlyAffectedStationIds = new Set([
+      ...brokenLinks.flatMap((l) => [l.sourceStationId, l.targetStationId]),
+      ...(simulationResult.failedStationIds ?? []),
+    ]);
 
-    // Trechos das estações diretamente afetadas pelo rompimento
     const affectedTrechos = new Set<string>();
     for (const stId of directlyAffectedStationIds) {
       const st = stationById[stId];
@@ -267,10 +269,9 @@ export function GeoMapPage() {
 
     if (affectedTrechos.size === 0) return new Set<string>();
 
-    // Demais estações que pertencem a qualquer um desses trechos
     const impacted = new Set<string>();
     for (const st of stations) {
-      if (directlyAffectedStationIds.has(st.id)) continue; // já marcada como rompida/atenuada
+      if (directlyAffectedStationIds.has(st.id)) continue;
       if (st.trechos?.some((t) => affectedTrechos.has(t))) {
         impacted.add(st.id);
       }
@@ -506,7 +507,7 @@ export function GeoMapPage() {
 
               return (
                 <Marker
-                  key={station.id}
+                  key={`${station.id}-${state}`}
                   position={[station.latitude!, station.longitude!]}
                   icon={towerIcon(color, pulsing)}
                   draggable
@@ -621,14 +622,21 @@ function StationActionPanel({ station, state, simulationResult, onNormalizeStati
 }) {
   const eqIds = station.equipmentIds ?? [];
   const [simulating, setSimulating] = useState(false);
+  const [error, setError] = useState('');
   const isDirectlyFailed =
     (simulationResult?.failedStationIds ?? []).includes(station.id) ||
     (eqIds.length > 0 && eqIds.every(id => (simulationResult?.removedEquipmentIds ?? []).includes(id)));
 
   async function handleSimulate() {
     setSimulating(true);
-    await onSimulateFailure();
-    setSimulating(false);
+    setError('');
+    try {
+      await onSimulateFailure();
+    } catch (e: any) {
+      setError(e?.response?.data?.message ?? 'Erro ao simular falha');
+    } finally {
+      setSimulating(false);
+    }
   }
 
   if (state === 'normal') {
@@ -641,6 +649,7 @@ function StationActionPanel({ station, state, simulationResult, onNormalizeStati
         >
           {simulating ? 'Simulando...' : '⚡ Simular Perda de Gerência'}
         </button>
+        {error && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{error}</div>}
         <em style={{ display: 'block', fontSize: 10, color: '#64748b', marginTop: 4, textAlign: 'center' }}>Arraste a torre para reposicionar.</em>
       </div>
     );
