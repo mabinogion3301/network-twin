@@ -24,6 +24,7 @@ export class SimulationsService {
   async run(dto: RunSimulationDto, triggeredByUserId: string) {
     const connectionIds = dto.connectionIds ?? [];
     const equipmentIds = dto.equipmentIds ?? [];
+    const failedStationIds = dto.failedStationIds ?? [];
 
     // Resolve connectionIds que podem ter sido informados por NOME (ex: "FO-023")
     // em vez de UUID — é assim que o operador vai descrever a falha no dia a dia.
@@ -79,6 +80,7 @@ export class SimulationsService {
       ...result,
       removedConnectionIds: resolvedConnectionIds,
       removedEquipmentIds: equipmentIds,
+      failedStationIds,
       unavailableStationPairs: result.unavailableStationPairs.map((pair) => ({
         ...pair,
         stationAName: stationsById[pair.stationAId],

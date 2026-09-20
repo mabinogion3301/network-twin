@@ -7,6 +7,7 @@ export interface SimulationResult {
   connectionNotes?: Record<string, string>;
   removedConnectionIds: string[];
   removedEquipmentIds: string[];
+  failedStationIds?: string[];
   unavailableStationPairs: Array<{
     linkId: string;
     stationAId: string;
