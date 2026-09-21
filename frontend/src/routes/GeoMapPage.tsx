@@ -207,6 +207,7 @@ export function GeoMapPage() {
         failedStationIds: remainingFailedStationIds,
       });
       if (res?.data) setSimulationResult(res.data);
+      load(); // força re-render dos marcadores Leaflet
     } catch {
       // falha ao normalizar — estado visual permanece como estava até tentar de novo
     }
@@ -243,6 +244,17 @@ export function GeoMapPage() {
 
   const removedConnectionIds = new Set(simulationResult?.removedConnectionIds ?? []);
   const removedEquipmentIds = new Set(simulationResult?.removedEquipmentIds ?? []);
+  const failedStationIds = new Set(simulationResult?.failedStationIds ?? []);
+
+  // Conexões que tocam uma estação com perda de gerência são tratadas como
+  // rompidas — assim os vizinhos ficam vermelhos/degradados automaticamente
+  // usando a mesma lógica que já funciona para fibras rompidas.
+  const effectiveRemovedConnectionIds = new Set([
+    ...removedConnectionIds,
+    ...links
+      .filter((l) => failedStationIds.has(l.sourceStationId) || failedStationIds.has(l.targetStationId))
+      .map((l) => l.id),
+  ]);
   const unavailableStationIds = new Set(
     (simulationResult?.unavailableStationPairs ?? []).flatMap((p) => [p.stationAId, p.stationBId]),
   );
@@ -256,7 +268,7 @@ export function GeoMapPage() {
     const hasActivity = removedConnectionIds.size > 0 || (simulationResult.failedStationIds ?? []).length > 0;
     if (!hasActivity) return new Set<string>();
 
-    const brokenLinks = links.filter((l) => removedConnectionIds.has(l.id));
+    const brokenLinks = links.filter((l) => effectiveRemovedConnectionIds.has(l.id));
     const directlyAffectedStationIds = new Set([
       ...brokenLinks.flatMap((l) => [l.sourceStationId, l.targetStationId]),
       ...(simulationResult.failedStationIds ?? []),
@@ -283,11 +295,9 @@ export function GeoMapPage() {
   function computeDegrees(stationId: string) {
     const touching = links.filter((l) => l.sourceStationId === stationId || l.targetStationId === stationId);
     const original = touching.length;
-    const remaining = simulationResult ? touching.filter((l) => !removedConnectionIds.has(l.id)).length : original;
+    const remaining = simulationResult ? touching.filter((l) => !effectiveRemovedConnectionIds.has(l.id)).length : original;
     return { original, remaining };
   }
-
-  const failedStationIds = new Set(simulationResult?.failedStationIds ?? []);
 
   function stationVisualState(station: GeoStation): StationVisualState {
     if (!simulationResult) return 'normal';
@@ -325,7 +335,7 @@ export function GeoMapPage() {
   // Cor/estilo da linha: prioridade para o resultado da simulação ativa;
   // sem simulação (ou link não afetado), usa a cor do TIPO de conexão/operadora.
   function colorForLink(link: GeoLink): { color: string; dashed: boolean; broken: boolean } {
-    if (removedConnectionIds.has(link.id)) {
+    if (effectiveRemovedConnectionIds.has(link.id)) {
       return { color: BROKEN_COLOR, dashed: true, broken: true };
     }
     if (simulationResult) {
@@ -487,6 +497,7 @@ export function GeoMapPage() {
                                 const active = simulationResult?.removedConnectionIds ?? [];
                                 const res = await api.post('/simulations', { connectionIds: [...new Set([...active, link.id])] });
                                 if (res?.data) setSimulationResult(res.data);
+                                load();
                               }}
                               style={{ width: '100%', padding: '7px', background: '#ef4444', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
                             >
@@ -539,6 +550,7 @@ export function GeoMapPage() {
                       failedStationIds: [...new Set([...activeFailed, station.id])],
                     });
                     if (res?.data) setSimulationResult(res.data);
+                    load(); // força re-render completo dos marcadores
                   }}
                 />
               );
