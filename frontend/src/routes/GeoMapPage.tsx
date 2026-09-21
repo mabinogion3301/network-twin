@@ -217,12 +217,12 @@ export function GeoMapPage() {
     const activeConns = simulationResult?.removedConnectionIds ?? [];
     const activeEqs = simulationResult?.removedEquipmentIds ?? [];
     const activeFailedStations = simulationResult?.failedStationIds ?? [];
-    const idsTouchingStation = new Set(
+    const stationLinkIds = new Set(
       links.filter((l) => l.sourceStationId === stationId || l.targetStationId === stationId).map((l) => l.id),
     );
     const stationEqIds = new Set(stationById[stationId]?.equipmentIds ?? []);
     normalizeIds(
-      activeConns.filter((id) => !idsTouchingStation.has(id)),
+      activeConns.filter((id) => !stationLinkIds.has(id)),
       activeEqs.filter((id) => !stationEqIds.has(id)),
       activeFailedStations.filter((id) => id !== stationId),
     );
@@ -540,17 +540,23 @@ export function GeoMapPage() {
                     normalizeIds(simulationResult?.removedConnectionIds ?? [], remainingEqs, remainingFailed);
                   }}
                   onSimulateFailure={async () => {
+                    // Simula perda de gerência rompendo todas as conexões
+                    // da estação — usa o mesmo caminho de código que já
+                    // funciona para rompimento de fibra.
+                    const stationLinkIds = links
+                      .filter(l => l.sourceStationId === station.id || l.targetStationId === station.id)
+                      .map(l => l.id);
                     const activeConns = simulationResult?.removedConnectionIds ?? [];
-                    const activeEqs = simulationResult?.removedEquipmentIds ?? [];
-                    const stEqIds = station.equipmentIds ?? [];
                     const activeFailed = simulationResult?.failedStationIds ?? [];
                     const res = await api.post('/simulations', {
-                      connectionIds: activeConns,
-                      equipmentIds: stEqIds.length > 0 ? [...new Set([...activeEqs, ...stEqIds])] : activeEqs,
-                      failedStationIds: [...new Set([...activeFailed, station.id])],
+                      connectionIds: [...new Set([...activeConns, ...stationLinkIds])],
+                      // Para estações sem conexões, usa failedStationIds como fallback
+                      failedStationIds: stationLinkIds.length === 0
+                        ? [...new Set([...activeFailed, station.id])]
+                        : activeFailed,
                     });
                     if (res?.data) setSimulationResult(res.data);
-                    load(); // força re-render completo dos marcadores
+                    load();
                   }}
                 />
               );
