@@ -247,13 +247,36 @@ export function GeoMapPage() {
   // Conexões marcadas como rompidas na simulação
   const removedConnectionIds = new Set(simulationResult?.removedConnectionIds ?? []);
 
-  // Estado de cada estação calculado pelo motor de impacto no backend
+  // Estado de cada estação calculado pelo motor de impacto no backend.
+  // Fallback: se stationStates vier vazio (backend antigo ou sem equipamentos
+  // nas conexões), calcula localmente pela análise das conexões rompidas.
   const stationStates = simulationResult?.stationStates ?? {};
+  const hasEngineResult = Object.keys(stationStates).length > 0;
 
   // Para colorir os links: links removidos = vermelhos
   function stationVisualState(station: GeoStation): StationVisualState {
     if (!simulationResult) return 'NORMAL';
-    return (stationStates[station.id] ?? 'NORMAL') as StationVisualState;
+
+    // Motor do backend — usa se disponível
+    if (hasEngineResult) {
+      return (stationStates[station.id] ?? 'NORMAL') as StationVisualState;
+    }
+
+    // Fallback local: analisa os links rompidos diretamente
+    const removedIds = new Set(simulationResult.removedConnectionIds ?? []);
+    if (removedIds.size === 0) return 'NORMAL';
+
+    const touching = links.filter(
+      (l) => l.sourceStationId === station.id || l.targetStationId === station.id,
+    );
+    const remaining = touching.filter((l) => !removedIds.has(l.id));
+
+    if (touching.length > 0 && remaining.length === 0) return 'ISOLATED';
+    if (remaining.length < touching.length) return 'DEGRADING';
+    // Está na zona de impacto se algum vizinho tem conexão rompida
+    const neighborAffected = touching.some((l) => removedIds.has(l.id));
+    if (neighborAffected) return 'IMPACTED';
+    return 'NORMAL';
   }
 
   function colorForState(state: StationVisualState, fallback: string): string {

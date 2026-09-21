@@ -41,10 +41,12 @@ export class SimulationsService {
     const stationConnections = allConnections
       .map((conn) => ({
         id: conn.id,
-        stationAId: conn.sourcePort.equipment.stationId,
-        stationBId: conn.targetPort.equipment.stationId,
+        stationAId: conn.sourcePort?.equipment?.stationId ?? '',
+        stationBId: conn.targetPort?.equipment?.stationId ?? '',
       }))
       .filter((c) => c.stationAId && c.stationBId && c.stationAId !== c.stationBId);
+
+    console.log(`[Impact] ${allStations.length} estações, ${stationConnections.length} conexões inter-estação, ${allFailedConnectionIds.length} falhas, ${coreStationIds.length} COREs`);
 
     const allStationIds = allStations.map((s) => s.id);
     const coreStationIds = allStations.filter((s) => s.isCore).map((s) => s.id);
