@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.module';
 import { GraphService } from '../graph/graph.service';
-import { GraphEdgeInput } from '../graph/graph.types';
 import { RunSimulationDto } from './dto/simulation.dto';
 import { EventsGateway } from '../events-gateway/events.gateway';
 
@@ -13,21 +12,11 @@ export class SimulationsService {
     private eventsGateway: EventsGateway,
   ) {}
 
-  /**
-   * Roda a simulação com a lista de falhas ATIVAS no momento (cumulativa —
-   * quem chama decide o que está ativo, somando ou removendo itens antes de
-   * chamar). Listas vazias são válidas: representam o estado "tudo normal"
-   * (usado pelo botão "Normalizar"), e ainda assim são persistidas e
-   * transmitidas via WebSocket, para o estado ficar consistente entre todos
-   * os usuários conectados e sobreviver à navegação entre telas.
-   */
   async run(dto: RunSimulationDto, triggeredByUserId: string) {
     const connectionIds = dto.connectionIds ?? [];
-    const equipmentIds = dto.equipmentIds ?? [];
     const failedStationIds = dto.failedStationIds ?? [];
 
-    // Resolve connectionIds que podem ter sido informados por NOME (ex: "FO-023")
-    // em vez de UUID — é assim que o operador vai descrever a falha no dia a dia.
+    // Resolve nomes de conexão → IDs reais
     const resolvedConnections = connectionIds.length
       ? await this.prisma.connection.findMany({
           where: { OR: [{ id: { in: connectionIds } }, { name: { in: connectionIds } }] },
@@ -36,72 +25,71 @@ export class SimulationsService {
       : [];
     const resolvedConnectionIds = resolvedConnections.map((c) => c.id);
 
-    // Carrega todo o grafo ativo: equipamentos, conexões e vínculos diretos entre estações
-    const [allEquipments, allConnections, allStationLinks] = await Promise.all([
-      this.prisma.equipment.findMany({ select: { id: true, stationId: true } }),
+    // Carrega dados para construir o grafo de estações
+    const [allStations, allConnections] = await Promise.all([
+      this.prisma.station.findMany({ select: { id: true, name: true, isCore: true } }),
       this.prisma.connection.findMany({
         where: { status: { not: 'DISABLED' } },
-        include: { sourcePort: true, targetPort: true },
+        include: {
+          sourcePort: { include: { equipment: true } },
+          targetPort: { include: { equipment: true } },
+        },
       }),
-      this.prisma.stationLink.findMany(),
     ]);
 
-    const equipmentToStation: Record<string, string> = {};
-    for (const eq of allEquipments) equipmentToStation[eq.id] = eq.stationId;
+    // Monta conexões entre ESTAÇÕES (não equipamentos) para o grafo
+    const stationConnections = allConnections
+      .map((conn) => ({
+        id: conn.id,
+        stationAId: conn.sourcePort.equipment.stationId,
+        stationBId: conn.targetPort.equipment.stationId,
+      }))
+      .filter((c) => c.stationAId && c.stationBId && c.stationAId !== c.stationBId);
 
-    const allEdges: GraphEdgeInput[] = allConnections.map((conn) => ({
-      connectionId: conn.id,
-      equipmentA: conn.sourcePort.equipmentId,
-      equipmentB: conn.targetPort.equipmentId,
-    }));
+    const allStationIds = allStations.map((s) => s.id);
+    const coreStationIds = allStations.filter((s) => s.isCore).map((s) => s.id);
 
-    const directStationLinks = allStationLinks.map((link) => ({
-      linkId: link.id,
-      stationAId: link.stationAId,
-      stationBId: link.stationBId,
-    }));
+    // Conexões rompidas = as explicitamente passadas + todas que tocam estações
+    // com perda de gerência (simular queda da estação)
+    const stationFailureConnIds = failedStationIds.length > 0
+      ? stationConnections
+          .filter((c) => failedStationIds.includes(c.stationAId) || failedStationIds.includes(c.stationBId))
+          .map((c) => c.id)
+      : [];
 
-    const result = this.graphService.simulateFailure({
-      allEquipmentIds: allEquipments.map((e) => e.id),
-      equipmentToStation,
-      allEdges,
-      directStationLinks,
-      removedConnectionIds: resolvedConnectionIds,
-      removedEquipmentIds: equipmentIds,
+    const allFailedConnectionIds = [...new Set([...resolvedConnectionIds, ...stationFailureConnIds])];
+
+    // Executa o motor de impacto
+    const impact = this.graphService.computeImpact({
+      stationConnections,
+      allStationIds,
+      coreStationIds,
+      failedConnectionIds: allFailedConnectionIds,
     });
 
-    // Enriquece o resultado com nomes (para exibir no frontend sem round-trip extra)
-    const [stationsById, equipmentsById] = await Promise.all([
-      this.prisma.station.findMany({ select: { id: true, name: true } }).then((rows) => Object.fromEntries(rows.map((r) => [r.id, r.name]))),
-      this.prisma.equipment.findMany({ select: { id: true, name: true } }).then((rows) => Object.fromEntries(rows.map((r) => [r.id, r.name]))),
-    ]);
-
-    const enrichedResult = {
-      ...result,
+    const result = {
       removedConnectionIds: resolvedConnectionIds,
-      removedEquipmentIds: equipmentIds,
       failedStationIds,
-      unavailableStationPairs: result.unavailableStationPairs.map((pair) => ({
-        ...pair,
-        stationAName: stationsById[pair.stationAId],
-        stationBName: stationsById[pair.stationBId],
-      })),
-      isolatedEquipment: result.isolatedEquipmentIds.map((id) => ({ id, name: equipmentsById[id] })),
-      impactedConnections: resolvedConnections.filter((c) => result.impactedConnectionIds.includes(c.id)),
+      stationStates: impact.stationStates,
+      isolatedStationIds: impact.isolatedStationIds,
+      degradingStationIds: impact.degradingStationIds,
+      impactedStationIds: impact.impactedStationIds,
+      normalStationIds: impact.normalStationIds,
+      stats: impact.stats,
+      coreStationIds,
     };
 
     const simulation = await this.prisma.failureSimulation.create({
       data: {
         triggeredByUserId,
         removedConnectionIds: resolvedConnectionIds,
-        removedEquipmentIds: equipmentIds,
-        resultJson: enrichedResult as any,
+        removedEquipmentIds: [],
+        resultJson: result as any,
       },
     });
 
-    const fullResult = { simulationId: simulation.id, ...enrichedResult };
+    const fullResult = { simulationId: simulation.id, ...result };
     this.eventsGateway.broadcastSimulationResult(fullResult);
-
     return fullResult;
   }
 
@@ -116,54 +104,31 @@ export class SimulationsService {
     return this.prisma.failureSimulation.findUnique({ where: { id } });
   }
 
-  /**
-   * Estado ATUAL da rede (última simulação executada, incluindo normalizações).
-   * Usado pelo frontend ao entrar/voltar para o Mapa, para restaurar o que
-   * estava ativo em vez de começar sempre do zero.
-   */
   async getCurrentState() {
     const latest = await this.prisma.failureSimulation.findFirst({ orderBy: { createdAt: 'desc' } });
     if (!latest) return null;
-    return {
-      simulationId: latest.id,
-      notes: latest.notes ?? '',
-      ...(latest.resultJson as Record<string, unknown>),
-    };
+    return { simulationId: latest.id, notes: latest.notes ?? '', ...(latest.resultJson as Record<string, unknown>) };
+  }
+
+  async updateNotes(id: string, notes: string) {
+    const updated = await this.prisma.failureSimulation.update({ where: { id }, data: { notes } });
+    const result = { simulationId: updated.id, notes: updated.notes ?? '', ...(updated.resultJson as Record<string, unknown>) };
+    this.eventsGateway.broadcastSimulationResult(result);
+    return result;
   }
 
   async updateConnectionNote(simulationId: string, connectionId: string, note: string) {
     const simulation = await this.prisma.failureSimulation.findUnique({ where: { id: simulationId } });
     if (!simulation) return null;
-
     const result = simulation.resultJson as Record<string, any>;
     const connectionNotes = result.connectionNotes ?? {};
     connectionNotes[connectionId] = note;
-
     const updated = await this.prisma.failureSimulation.update({
       where: { id: simulationId },
       data: { resultJson: { ...result, connectionNotes } },
     });
-
-    const fullResult = {
-      simulationId: updated.id,
-      notes: updated.notes ?? '',
-      ...(updated.resultJson as Record<string, unknown>),
-    };
+    const fullResult = { simulationId: updated.id, notes: updated.notes ?? '', ...(updated.resultJson as Record<string, unknown>) };
     this.eventsGateway.broadcastSimulationResult(fullResult);
     return fullResult;
-  }
-    const updated = await this.prisma.failureSimulation.update({
-      where: { id },
-      data: { notes },
-    });
-    // Transmite a nota para todos os clientes via WebSocket — assim todos
-    // veem a anotação em tempo real sem precisar de F5.
-    const result = {
-      simulationId: updated.id,
-      notes: updated.notes ?? '',
-      ...(updated.resultJson as Record<string, unknown>),
-    };
-    this.eventsGateway.broadcastSimulationResult(result);
-    return result;
   }
 }

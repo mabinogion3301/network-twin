@@ -18,6 +18,7 @@ interface GeoStation {
   status: string;
   trechos: string[];
   equipmentIds: string[];
+  isCore: boolean;
 }
 
 interface GeoLink {
@@ -74,21 +75,28 @@ export const CONNECTION_TYPE_STYLES: Record<string, { label: string; color: stri
 
 // Cores do RESULTADO de uma simulação de falha (têm prioridade sobre a cor
 // do tipo de conexão enquanto o resultado estiver ativo):
-const BROKEN_COLOR = '#ef4444';    // rompido / sem comunicação
-const DEGRADED_COLOR = '#eab308';  // atenuado (perdeu redundância, mas ainda tem >1 caminho)
-const SATURATING_COLOR = '#3b82f6'; // saturando (tinha 3+ links, ficou com só 1)
-const TRECHO_COLOR = '#7c3aed';    // impactado por trecho — roxo pulsante
+// ─── Estados visuais conforme spec ────────────────────────────────────────────
+// NORMAL   → verde (sem animação)
+// DEGRADING → amarelo âmbar (perdeu redundância mas ainda gerenciada)
+// IMPACTED  → roxo pulsante lento (na zona de impacto, redundância preservada)
+// ISOLATED  → vermelho pulsante forte (sem caminho para nenhum CORE)
+const ISOLATED_COLOR  = '#ef4444'; // vermelho
+const DEGRADING_COLOR = '#f59e0b'; // âmbar
+const IMPACTED_COLOR  = '#7c3aed'; // roxo
 
-type StationVisualState = 'broken' | 'saturating' | 'degraded' | 'trecho_impact' | 'normal';
+type StationVisualState = 'ISOLATED' | 'DEGRADING' | 'IMPACTED' | 'NORMAL';
 
-function towerIcon(color: string, pulsing: boolean) {
+function towerIcon(color: string, pulse: 'none' | 'fast' | 'slow') {
+  const animation =
+    pulse === 'fast' ? 'animation: ntw-pulse-fast 0.9s infinite;' :
+    pulse === 'slow' ? 'animation: ntw-pulse-slow 2s infinite;' : '';
   const html = `
     <div style="
       width: 34px; height: 34px; border-radius: 8px;
       background: #0f172a; border: 2px solid ${color};
       display: flex; align-items: center; justify-content: center;
       box-shadow: 0 0 8px ${color}80;
-      ${pulsing ? 'animation: ntw-pulse 1.2s infinite;' : ''}
+      ${animation}
       cursor: grab;
     ">
       <svg width="20" height="20" viewBox="0 0 64 64">
@@ -101,10 +109,15 @@ function towerIcon(color: string, pulsing: boolean) {
       </svg>
     </div>
     <style>
-      @keyframes ntw-pulse {
-        0% { box-shadow: 0 0 4px ${color}80; }
-        50% { box-shadow: 0 0 16px 4px ${color}; }
+      @keyframes ntw-pulse-fast {
+        0%   { box-shadow: 0 0 4px ${color}80; }
+        50%  { box-shadow: 0 0 20px 6px ${color}; }
         100% { box-shadow: 0 0 4px ${color}80; }
+      }
+      @keyframes ntw-pulse-slow {
+        0%   { box-shadow: 0 0 4px ${color}60; }
+        50%  { box-shadow: 0 0 12px 3px ${color}; }
+        100% { box-shadow: 0 0 4px ${color}60; }
       }
     </style>`;
   return L.divIcon({ html, className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
@@ -199,37 +212,26 @@ export function GeoMapPage() {
   // EXATAMENTE como "Romper": chama o mesmo endpoint, que persiste o novo
   // estado e transmite via WebSocket para todos os usuários conectados.
   // A diferença é só que a lista de conexões removidas fica MENOR (ou vazia).
-  async function normalizeIds(remainingConnectionIds: string[], remainingEquipmentIds: string[] = [], remainingFailedStationIds: string[] = []) {
+  async function normalizeIds(remainingConnectionIds: string[]) {
     try {
-      const res = await api.post('/simulations', {
-        connectionIds: remainingConnectionIds,
-        equipmentIds: remainingEquipmentIds,
-        failedStationIds: remainingFailedStationIds,
-      });
+      const res = await api.post('/simulations', { connectionIds: remainingConnectionIds });
       if (res?.data) setSimulationResult(res.data);
-      load(); // força re-render dos marcadores Leaflet
+      load();
     } catch {
-      // falha ao normalizar — estado visual permanece como estava até tentar de novo
+      // falha ao normalizar — estado visual permanece como estava
     }
   }
 
   function normalizeStation(stationId: string) {
     const activeConns = simulationResult?.removedConnectionIds ?? [];
-    const activeEqs = simulationResult?.removedEquipmentIds ?? [];
-    const activeFailedStations = simulationResult?.failedStationIds ?? [];
     const stationLinkIds = new Set(
       links.filter((l) => l.sourceStationId === stationId || l.targetStationId === stationId).map((l) => l.id),
     );
-    const stationEqIds = new Set(stationById[stationId]?.equipmentIds ?? []);
-    normalizeIds(
-      activeConns.filter((id) => !stationLinkIds.has(id)),
-      activeEqs.filter((id) => !stationEqIds.has(id)),
-      activeFailedStations.filter((id) => id !== stationId),
-    );
+    normalizeIds(activeConns.filter((id) => !stationLinkIds.has(id)));
   }
 
   function normalizeAll() {
-    normalizeIds([], [], []);
+    normalizeIds([]);
   }
 
   // Arrastar a torre no Mapa do Brasil move a posição GEOGRÁFICA real da estação.
@@ -242,108 +244,44 @@ export function GeoMapPage() {
   const stationsWithoutCoords = stations.filter((s) => s.latitude == null || s.longitude == null);
   const stationById = Object.fromEntries(stations.map((s) => [s.id, s]));
 
+  // Conexões marcadas como rompidas na simulação
   const removedConnectionIds = new Set(simulationResult?.removedConnectionIds ?? []);
-  const removedEquipmentIds = new Set(simulationResult?.removedEquipmentIds ?? []);
-  const failedStationIds = new Set(simulationResult?.failedStationIds ?? []);
 
-  // Conexões que tocam uma estação com perda de gerência são tratadas como
-  // rompidas — assim os vizinhos ficam vermelhos/degradados automaticamente
-  // usando a mesma lógica que já funciona para fibras rompidas.
-  const effectiveRemovedConnectionIds = new Set([
-    ...removedConnectionIds,
-    ...links
-      .filter((l) => failedStationIds.has(l.sourceStationId) || failedStationIds.has(l.targetStationId))
-      .map((l) => l.id),
-  ]);
-  const unavailableStationIds = new Set(
-    (simulationResult?.unavailableStationPairs ?? []).flatMap((p) => [p.stationAId, p.stationBId]),
-  );
+  // Estado de cada estação calculado pelo motor de impacto no backend
+  const stationStates = simulationResult?.stationStates ?? {};
 
-  // Calcula estações impactadas por trecho:
-  // 1. Encontra os links rompidos e pega as estações de cada ponta
-  // 2. Coleta todos os trechos dessas estações
-  // 3. Marca todas as outras estações que compartilham algum desses trechos
-  const trechoImpactedStationIds = (() => {
-    if (!simulationResult) return new Set<string>();
-    const hasActivity = removedConnectionIds.size > 0 || (simulationResult.failedStationIds ?? []).length > 0;
-    if (!hasActivity) return new Set<string>();
-
-    const brokenLinks = links.filter((l) => effectiveRemovedConnectionIds.has(l.id));
-    const directlyAffectedStationIds = new Set([
-      ...brokenLinks.flatMap((l) => [l.sourceStationId, l.targetStationId]),
-      ...(simulationResult.failedStationIds ?? []),
-    ]);
-
-    const affectedTrechos = new Set<string>();
-    for (const stId of directlyAffectedStationIds) {
-      const st = stationById[stId];
-      if (st?.trechos) st.trechos.forEach((t) => affectedTrechos.add(t));
-    }
-
-    if (affectedTrechos.size === 0) return new Set<string>();
-
-    const impacted = new Set<string>();
-    for (const st of stations) {
-      if (directlyAffectedStationIds.has(st.id)) continue;
-      if (st.trechos?.some((t) => affectedTrechos.has(t))) {
-        impacted.add(st.id);
-      }
-    }
-    return impacted;
-  })();
-
-  function computeDegrees(stationId: string) {
-    const touching = links.filter((l) => l.sourceStationId === stationId || l.targetStationId === stationId);
-    const original = touching.length;
-    const remaining = simulationResult ? touching.filter((l) => !effectiveRemovedConnectionIds.has(l.id)).length : original;
-    return { original, remaining };
-  }
-
+  // Para colorir os links: links removidos = vermelhos
   function stationVisualState(station: GeoStation): StationVisualState {
-    if (!simulationResult) return 'normal';
-
-    // Falha direta via perda de gerência (stationId marcado diretamente)
-    if (failedStationIds.has(station.id)) return 'broken';
-
-    // Falha direta: todos os equipamentos da estação foram removidos da simulação
-    const eqIds = station.equipmentIds ?? [];
-    if (eqIds.length > 0 && eqIds.every(id => removedEquipmentIds.has(id))) {
-      return 'broken';
-    }
-
-    if (unavailableStationIds.has(station.id)) return 'broken';
-
-    const { original, remaining } = computeDegrees(station.id);
-    if (original > 0 && remaining === 0) return 'broken';
-    if (original >= 3 && remaining === 1) return 'saturating';
-    if (remaining < original) return 'degraded';
-
-    // Impacto por trecho: não perdeu conectividade, mas pertence ao mesmo
-    // trecho operacional de uma estação cujo enlace foi rompido
-    if (trechoImpactedStationIds.has(station.id)) return 'trecho_impact';
-
-    return 'normal';
+    if (!simulationResult) return 'NORMAL';
+    return (stationStates[station.id] ?? 'NORMAL') as StationVisualState;
   }
 
   function colorForState(state: StationVisualState, fallback: string): string {
-    if (state === 'broken') return BROKEN_COLOR;
-    if (state === 'saturating') return SATURATING_COLOR;
-    if (state === 'degraded') return DEGRADED_COLOR;
-    if (state === 'trecho_impact') return TRECHO_COLOR;
+    if (state === 'ISOLATED')  return ISOLATED_COLOR;
+    if (state === 'DEGRADING') return DEGRADING_COLOR;
+    if (state === 'IMPACTED')  return IMPACTED_COLOR;
     return fallback;
   }
 
-  // Cor/estilo da linha: prioridade para o resultado da simulação ativa;
-  // sem simulação (ou link não afetado), usa a cor do TIPO de conexão/operadora.
+  function pulseForState(state: StationVisualState): 'none' | 'fast' | 'slow' {
+    if (state === 'ISOLATED') return 'fast';
+    if (state === 'IMPACTED') return 'slow';
+    return 'none';
+  }
+
   function colorForLink(link: GeoLink): { color: string; dashed: boolean; broken: boolean } {
-    if (effectiveRemovedConnectionIds.has(link.id)) {
-      return { color: BROKEN_COLOR, dashed: true, broken: true };
+    if (removedConnectionIds.has(link.id)) {
+      return { color: ISOLATED_COLOR, dashed: true, broken: true };
     }
+    // Link que toca uma estação isolada ou degradada fica com a cor de alerta
     if (simulationResult) {
-      const sourceState = stationVisualState(stationById[link.sourceStationId]);
-      const targetState = stationVisualState(stationById[link.targetStationId]);
-      if (sourceState === 'saturating' || targetState === 'saturating') {
-        return { color: SATURATING_COLOR, dashed: false, broken: false };
+      const srcState = stationVisualState(stationById[link.sourceStationId]);
+      const tgtState = stationVisualState(stationById[link.targetStationId]);
+      if (srcState === 'ISOLATED' || tgtState === 'ISOLATED') {
+        return { color: ISOLATED_COLOR, dashed: true, broken: true };
+      }
+      if (srcState === 'DEGRADING' || tgtState === 'DEGRADING') {
+        return { color: DEGRADING_COLOR, dashed: false, broken: false };
       }
     }
     const typeStyle = CONNECTION_TYPE_STYLES[link.type];
@@ -370,14 +308,14 @@ export function GeoMapPage() {
         }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--red)', boxShadow: '0 0 6px #ef4444', display: 'inline-block', flexShrink: 0 }} />
           <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-            SIMULAÇÃO ATIVA · {simulationResult.removedConnectionIds.length} falha(s) ·
-            {simulationResult.unavailableStationPairs?.length ? ` ${simulationResult.unavailableStationPairs.length} par(es) sem comunicação` : ' sem impacto detectado'}
+            SIMULAÇÃO ATIVA · {simulationResult.removedConnectionIds.length} falha(s)
+            {simulationResult.stats?.isolated ? ` · ${simulationResult.stats.isolated} isolada(s)` : ''}
+            {simulationResult.stats?.degrading ? ` · ${simulationResult.stats.degrading} degradando` : ''}
           </span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-            <Legend color={BROKEN_COLOR} label="Rompido" />
-            <Legend color={DEGRADED_COLOR} label="Atenuado" />
-            <Legend color={SATURATING_COLOR} label="Saturando" />
-            <Legend color={TRECHO_COLOR} label="Impactado por Trecho" />
+            <Legend color={ISOLATED_COLOR}  label="Isolada" />
+            <Legend color={IMPACTED_COLOR}  label="Impactada" />
+            <Legend color={DEGRADING_COLOR} label="Degradando" />
           </div>
           <button
             onClick={normalizeAll}
@@ -516,9 +454,9 @@ export function GeoMapPage() {
             {stationsWithCoords.map((station) => {
               const state = stationVisualState(station);
               const color = colorForState(state, STATUS_COLORS[station.status] ?? '#94a3b8');
-              const pulsing = state === 'broken' || state === 'trecho_impact';
+              const pulse = pulseForState(state);
               const touchingTypes = typesTouchingStation(station.id);
-              const icon = towerIcon(color, pulsing);
+              const icon = towerIcon(color, pulse);
 
               return (
                 <DynamicMarker
@@ -534,27 +472,13 @@ export function GeoMapPage() {
                   station={station}
                   simulationResult={simulationResult}
                   onNormalizeStation={() => normalizeStation(station.id)}
-                  onNormalizeEquipments={() => {
-                    const stEqIds = station.equipmentIds ?? [];
-                    const remainingEqs = (simulationResult?.removedEquipmentIds ?? []).filter(id => !stEqIds.includes(id));
-                    const remainingFailed = (simulationResult?.failedStationIds ?? []).filter(id => id !== station.id);
-                    normalizeIds(simulationResult?.removedConnectionIds ?? [], remainingEqs, remainingFailed);
-                  }}
                   onSimulateFailure={async () => {
-                    // Simula perda de gerência rompendo todas as conexões
-                    // da estação — usa o mesmo caminho de código que já
-                    // funciona para rompimento de fibra.
                     const stationLinkIds = links
                       .filter(l => l.sourceStationId === station.id || l.targetStationId === station.id)
                       .map(l => l.id);
                     const activeConns = simulationResult?.removedConnectionIds ?? [];
-                    const activeFailed = simulationResult?.failedStationIds ?? [];
                     const res = await api.post('/simulations', {
                       connectionIds: [...new Set([...activeConns, ...stationLinkIds])],
-                      // Para estações sem conexões, usa failedStationIds como fallback
-                      failedStationIds: stationLinkIds.length === 0
-                        ? [...new Set([...activeFailed, station.id])]
-                        : activeFailed,
                     });
                     if (res?.data) setSimulationResult(res.data);
                     load();
@@ -573,7 +497,7 @@ export function GeoMapPage() {
 // o Popup que estiver aberto.
 function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName,
   touchingTypes, state, station, simulationResult,
-  onNormalizeStation, onNormalizeEquipments, onSimulateFailure }: any) {
+  onNormalizeStation, onSimulateFailure }: any) {
   const markerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -606,15 +530,13 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
         {station.city} - {station.state}
         <br />
         Status:{' '}
-        {state === 'broken'
-          ? 'SEM COMUNICAÇÃO (simulação ativa)'
-          : state === 'saturating'
-            ? 'SATURANDO (restou só 1 link)'
-            : state === 'degraded'
-              ? 'ATENUADO (perdeu redundância)'
-              : state === 'trecho_impact'
-                ? 'IMPACTADO POR TRECHO (possível geração de alarmes)'
-                : station.status}
+        {state === 'ISOLATED'
+          ? 'ISOLADA — sem caminho para nenhum CORE'
+          : state === 'DEGRADING'
+            ? 'DEGRADANDO — perdeu redundância'
+            : state === 'IMPACTED'
+              ? 'IMPACTADA — na zona de falha, mas gerenciada'
+              : station.status}
 
         {station.trechos && station.trechos.length > 0 && (
           <>
@@ -645,7 +567,6 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
           state={state}
           simulationResult={simulationResult}
           onNormalizeStation={onNormalizeStation}
-          onNormalizeEquipments={onNormalizeEquipments}
           onSimulateFailure={onSimulateFailure}
         />
       </Popup>
@@ -654,20 +575,15 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
 }
 
 // Painel de ações no popup da estação: simular falha ou normalizar + nota
-function StationActionPanel({ station, state, simulationResult, onNormalizeStation, onNormalizeEquipments, onSimulateFailure }: {
+function StationActionPanel({ station, state, simulationResult, onNormalizeStation, onSimulateFailure }: {
   station: GeoStation;
   state: StationVisualState;
   simulationResult: SimulationResult | null;
   onNormalizeStation: () => void;
-  onNormalizeEquipments: () => void;
   onSimulateFailure: () => Promise<void>;
 }) {
-  const eqIds = station.equipmentIds ?? [];
   const [simulating, setSimulating] = useState(false);
   const [error, setError] = useState('');
-  const isDirectlyFailed =
-    (simulationResult?.failedStationIds ?? []).includes(station.id) ||
-    (eqIds.length > 0 && eqIds.every(id => (simulationResult?.removedEquipmentIds ?? []).includes(id)));
 
   async function handleSimulate() {
     setSimulating(true);
@@ -681,7 +597,7 @@ function StationActionPanel({ station, state, simulationResult, onNormalizeStati
     }
   }
 
-  if (state === 'normal') {
+  if (state === 'NORMAL') {
     return (
       <div style={{ marginTop: 8 }}>
         <button
@@ -692,28 +608,20 @@ function StationActionPanel({ station, state, simulationResult, onNormalizeStati
           {simulating ? 'Simulando...' : '⚡ Simular Perda de Gerência'}
         </button>
         {error && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{error}</div>}
+        {station.isCore && <div style={{ fontSize: 10, color: '#3b82f6', marginTop: 4, textAlign: 'center' }}>★ Ponto de Gerência (CORE)</div>}
         <em style={{ display: 'block', fontSize: 10, color: '#64748b', marginTop: 4, textAlign: 'center' }}>Arraste a torre para reposicionar.</em>
       </div>
     );
   }
 
   return (
-    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {isDirectlyFailed ? (
-        <button
-          onClick={onNormalizeEquipments}
-          style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-        >
-          ✓ Normalizar Gerência
-        </button>
-      ) : (
-        <button
-          onClick={onNormalizeStation}
-          style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-        >
-          ✓ Normalizar Estação
-        </button>
-      )}
+    <div style={{ marginTop: 8 }}>
+      <button
+        onClick={onNormalizeStation}
+        style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+      >
+        ✓ Normalizar Estação
+      </button>
     </div>
   );
 }

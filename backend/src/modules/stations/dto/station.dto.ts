@@ -1,4 +1,4 @@
-import { IsArray, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export enum StationStatusDto {
   ONLINE = 'ONLINE',
@@ -59,6 +59,7 @@ export class UpdateStationDto {
   @IsOptional() @IsNumber() mapPositionY?: number;
   @IsOptional() @IsString() notes?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) trechos?: string[];
+  @IsOptional() @IsBoolean() isCore?: boolean;
   @IsOptional() @IsEnum(StationStatusDto) status?: StationStatusDto;
 }
 

@@ -10,8 +10,9 @@ interface Overview {
   offlineStations: number;
   offlineEquipments: number;
   linksInFailure: number;
-  equipmentInFailure: number;
-  stationsInFailure: number;
+  stationsIsolated: number;
+  stationsDegrading: number;
+  stationsImpacted: number;
   hasActiveSimulation: boolean;
 }
 
@@ -106,10 +107,11 @@ export function DashboardPage() {
       {data.hasActiveSimulation && (
         <section>
           <SectionLabel>Simulação Ativa</SectionLabel>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-            <StatCard label="Links Rompidos" value={data.linksInFailure} accent="var(--red)" icon="🔴" />
-            <StatCard label="Equipamentos Isolados" value={data.equipmentInFailure} accent="var(--red)" icon="⚡" />
-            <StatCard label="Estações Sem Comunicação" value={data.stationsInFailure} accent="var(--red)" icon="📡" />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+            <StatCard label="Links Rompidos"      value={data.linksInFailure}    accent="var(--red)"    icon="🔴" />
+            <StatCard label="Isoladas"            value={data.stationsIsolated}  accent="var(--red)"    icon="📡" />
+            <StatCard label="Impactadas"          value={data.stationsImpacted}  accent="#7c3aed"       icon="🔵" />
+            <StatCard label="Degradando"          value={data.stationsDegrading} accent="var(--yellow)" icon="⚠️" />
           </div>
         </section>
       )}

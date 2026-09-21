@@ -187,6 +187,7 @@ export class TopologyService {
         status: s.status,
         trechos: s.trechos ?? [],
         equipmentIds: equipmentsByStation.get(s.id) ?? [],
+        isCore: s.isCore ?? false,
       })),
       links: interStationLinks,
     };

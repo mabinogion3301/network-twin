@@ -1,29 +1,33 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 
+export type StationImpactState = 'NORMAL' | 'DEGRADING' | 'IMPACTED' | 'ISOLATED';
+
 export interface SimulationResult {
   simulationId: string;
   notes?: string;
   connectionNotes?: Record<string, string>;
   removedConnectionIds: string[];
-  removedEquipmentIds: string[];
   failedStationIds?: string[];
-  unavailableStationPairs: Array<{
-    linkId: string;
-    stationAId: string;
-    stationBId: string;
-    stationAName: string;
-    stationBName: string;
-  }>;
-  isolatedEquipmentIds: string[];
-  isolatedEquipment: Array<{ id: string; name: string }>;
-  impactedConnectionIds: string[];
-  impactedConnections: Array<{ id: string; name: string }>;
+  stationStates?: Record<string, StationImpactState>;
+  isolatedStationIds?: string[];
+  degradingStationIds?: string[];
+  impactedStationIds?: string[];
+  coreStationIds?: string[];
+  stats?: {
+    total: number;
+    normal: number;
+    degrading: number;
+    impacted: number;
+    isolated: number;
+  };
 }
+
+type TopologyChangedCallback = () => void;
 
 export function useWebSocket(
   onSimulationResult: (result: SimulationResult) => void,
-  onTopologyChanged?: () => void,
+  onTopologyChanged?: TopologyChangedCallback,
 ) {
   const socketRef = useRef<Socket | null>(null);
 

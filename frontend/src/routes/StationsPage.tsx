@@ -4,7 +4,7 @@ import { equipmentsApi, equipmentTypesApi } from '../services/api/equipments.api
 import { connectionsApi, portsApi } from '../services/api/connections.api';
 import { CONNECTION_TYPE_STYLES } from './GeoMapPage';
 
-interface Station { id: string; name: string; city: string; state: string; status: string; latitude?: number | null; longitude?: number | null; notes?: string; trechos?: string[]; }
+interface Station { id: string; name: string; city: string; state: string; status: string; latitude?: number | null; longitude?: number | null; notes?: string; trechos?: string[]; isCore?: boolean; }
 interface Equipment { id: string; name: string; ip?: string; status: string; typeId: string; type: { name: string }; ports: Port[]; }
 interface Port { id: string; number: number; name?: string; type: string; }
 interface Connection { id: string; name: string; type: string; status: string; isBackup: boolean; sourcePort: { id: string; number: number; equipment: { id: string; name: string; station: { name: string } } }; targetPort: { id: string; number: number; equipment: { id: string; name: string; station: { name: string } } }; }
@@ -124,6 +124,16 @@ export function StationsPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <Dot status={station.status} />
                   <span style={{ fontWeight: 700, fontSize: 17, color: 'var(--text-primary)' }}>{station.name}</span>
+                  {station.trechos && station.trechos.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {station.trechos.map((t, i) => (
+                        <span key={i} style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 4, padding: '1px 6px', fontSize: 10, color: '#a78bfa', fontFamily: 'var(--font-mono)' }}>{t}</span>
+                      ))}
+                    </div>
+                  )}
+                  {station.isCore && (
+                    <span style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: 4, padding: '1px 7px', fontSize: 10, color: '#60a5fa', fontFamily: 'var(--font-mono)' }}>★ CORE</span>
+                  )}
                 </div>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                   {station.city} · {station.state}
@@ -272,7 +282,7 @@ function F({ label, children }: { label: string; children: React.ReactNode }) {
 }
 
 function StationModal({ station, onClose, onSaved }: any) {
-  const [f, setF] = useState({ name: station?.name ?? '', city: station?.city ?? '', state: station?.state ?? '', status: station?.status ?? 'ONLINE', notes: station?.notes ?? '', latitude: station?.latitude != null ? String(station.latitude) : '', longitude: station?.longitude != null ? String(station.longitude) : '', trechosInput: (station?.trechos ?? []).join(', ') });
+  const [f, setF] = useState({ name: station?.name ?? '', city: station?.city ?? '', state: station?.state ?? '', status: station?.status ?? 'ONLINE', notes: station?.notes ?? '', latitude: station?.latitude != null ? String(station.latitude) : '', longitude: station?.longitude != null ? String(station.longitude) : '', trechosInput: (station?.trechos ?? []).join(', '), isCore: station?.isCore ?? false });
   const [err, setErr] = useState('');
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setErr('');
@@ -302,13 +312,12 @@ function StationModal({ station, onClose, onSaved }: any) {
       <F label="Observações"><textarea style={{ ...inp, minHeight: 50 }} value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} /></F>
       <F label="Trechos (separados por vírgula)">
         <input style={inp} value={f.trechosInput} onChange={e => setF({ ...f, trechosInput: e.target.value })} placeholder="Campo Grande, MT Sul, Cuiabá Norte" />
-        {f.trechosInput && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 6 }}>
-            {f.trechosInput.split(',').map((t: string) => t.trim()).filter(Boolean).map((t: string, i: number) => (
-              <span key={i} style={{ background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 4, padding: '2px 8px', fontSize: 11, color: '#a78bfa' }}>{t}</span>
-            ))}
-          </div>
-        )}
+      </F>
+      <F label="">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer' }}>
+          <input type="checkbox" checked={f.isCore} onChange={e => setF({ ...f, isCore: e.target.checked })} />
+          Ponto de Gerência (CORE) — estações precisam de caminho até aqui
+        </label>
       </F>
       {err && <p style={{ color: 'var(--red)', fontSize: 12, margin: 0 }}>{err}</p>}
     </Modal>
