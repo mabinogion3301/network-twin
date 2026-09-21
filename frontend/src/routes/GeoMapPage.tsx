@@ -314,6 +314,7 @@ export function GeoMapPage() {
     if (unavailableStationIds.has(station.id)) return 'broken';
 
     const { original, remaining } = computeDegrees(station.id);
+    if (original > 0 && remaining === 0) return 'broken';
     if (original >= 3 && remaining === 1) return 'saturating';
     if (remaining < original) return 'degraded';
 
