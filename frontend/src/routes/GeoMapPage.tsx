@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -506,112 +506,131 @@ export function GeoMapPage() {
               const color = colorForState(state, STATUS_COLORS[station.status] ?? '#94a3b8');
               const pulsing = state === 'broken' || state === 'trecho_impact';
               const touchingTypes = typesTouchingStation(station.id);
+              const icon = towerIcon(color, pulsing);
 
               return (
-                <Marker
-                  key={`${station.id}-${state}`}
+                <DynamicMarker
+                  key={station.id}
                   position={[station.latitude!, station.longitude!]}
-                  icon={towerIcon(color, pulsing)}
+                  icon={icon}
                   draggable
-                  eventHandlers={{
-                    dragend: (e) => {
-                      const { lat, lng } = e.target.getLatLng();
-                      handleStationDragEnd(station.id, lat, lng);
-                    },
+                  onDragEnd={(lat: number, lng: number) => handleStationDragEnd(station.id, lat, lng)}
+                  zoom={zoom}
+                  stationName={station.name}
+                  touchingTypes={touchingTypes}
+                  state={state}
+                  station={station}
+                  simulationResult={simulationResult}
+                  onNormalizeStation={() => normalizeStation(station.id)}
+                  onNormalizeEquipments={() => {
+                    const stEqIds = station.equipmentIds ?? [];
+                    const remainingEqs = (simulationResult?.removedEquipmentIds ?? []).filter(id => !stEqIds.includes(id));
+                    const remainingFailed = (simulationResult?.failedStationIds ?? []).filter(id => id !== station.id);
+                    normalizeIds(simulationResult?.removedConnectionIds ?? [], remainingEqs, remainingFailed);
                   }}
-                >
-                  {zoom >= LABEL_VISIBLE_ZOOM && (
-                    <Tooltip permanent direction="top" offset={[0, -20]} opacity={0.95} className="station-name-tooltip">
-                      {station.name}
-                    </Tooltip>
-                  )}
-                  <Popup>
-                    <strong>{station.name}</strong>
-                    <br />
-                    {station.city} - {station.state}
-                    <br />
-                    Status:{' '}
-                    {state === 'broken'
-                      ? 'SEM COMUNICAÇÃO (simulação ativa)'
-                      : state === 'saturating'
-                        ? 'SATURANDO (restou só 1 link)'
-                        : state === 'degraded'
-                          ? 'ATENUADO (perdeu redundância)'
-                          : state === 'trecho_impact'
-                            ? 'IMPACTADO POR TRECHO (possível geração de alarmes)'
-                            : station.status}
-
-                    {station.trechos && station.trechos.length > 0 && (
-                      <>
-                        <br />
-                        <strong style={{ fontSize: 12 }}>Trechos:</strong>{' '}
-                        <span style={{ fontSize: 12, color: '#a78bfa' }}>{station.trechos.join(', ')}</span>
-                      </>
-                    )}
-
-                    {touchingTypes.length > 0 && (
-                      <>
-                        <br />
-                        <strong style={{ fontSize: 12 }}>Conexões desta estação:</strong>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
-                          {touchingTypes.map((t) => (
-                            <span key={t.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                              <span
-                                style={{
-                                  width: 16,
-                                  height: 0,
-                                  borderTop: `2px ${t.dashed ? 'dashed' : 'solid'} ${t.color}`,
-                                  display: 'inline-block',
-                                }}
-                              />
-                              {t.label}
-                            </span>
-                          ))}
-                        </div>
-                      </>
-                    )}
-
-                    <br />
-                    <StationActionPanel
-                      station={station}
-                      state={state}
-                      simulationResult={simulationResult}
-                      onNormalizeStation={() => normalizeStation(station.id)}
-                      onNormalizeEquipments={() => {
-                        const stEqIds = station.equipmentIds ?? [];
-                        const remainingEqs = (simulationResult?.removedEquipmentIds ?? [])
-                          .filter(id => !stEqIds.includes(id));
-                        const remainingFailedStations = (simulationResult?.failedStationIds ?? [])
-                          .filter(id => id !== station.id);
-                        normalizeIds(
-                          simulationResult?.removedConnectionIds ?? [],
-                          remainingEqs,
-                          remainingFailedStations,
-                        );
-                      }}
-                      onSimulateFailure={async () => {
-                        const activeConns = simulationResult?.removedConnectionIds ?? [];
-                        const activeEqs = simulationResult?.removedEquipmentIds ?? [];
-                        const stEqIds = station.equipmentIds ?? [];
-                        const activeFailedStations = simulationResult?.failedStationIds ?? [];
-                        const res = await api.post('/simulations', {
-                          connectionIds: activeConns,
-                          equipmentIds: stEqIds.length > 0
-                            ? [...new Set([...activeEqs, ...stEqIds])]
-                            : activeEqs,
-                          failedStationIds: [...new Set([...activeFailedStations, station.id])],
-                        });
-                        // Atualiza o estado local imediatamente sem esperar o WebSocket
-                        if (res?.data) setSimulationResult(res.data);
-                      }}
-                    />
-                  </Popup>
-                </Marker>
+                  onSimulateFailure={async () => {
+                    const activeConns = simulationResult?.removedConnectionIds ?? [];
+                    const activeEqs = simulationResult?.removedEquipmentIds ?? [];
+                    const stEqIds = station.equipmentIds ?? [];
+                    const activeFailed = simulationResult?.failedStationIds ?? [];
+                    const res = await api.post('/simulations', {
+                      connectionIds: activeConns,
+                      equipmentIds: stEqIds.length > 0 ? [...new Set([...activeEqs, ...stEqIds])] : activeEqs,
+                      failedStationIds: [...new Set([...activeFailed, station.id])],
+                    });
+                    if (res?.data) setSimulationResult(res.data);
+                  }}
+                />
               );
             })}
           </MapContainer>
       </div>
     </div>
+  );
+}
+
+// DynamicMarker atualiza o ícone imperativamente via ref — assim o Leaflet
+// chama setIcon() diretamente no marker sem desmontar o componente nem fechar
+// o Popup que estiver aberto.
+function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName,
+  touchingTypes, state, station, simulationResult,
+  onNormalizeStation, onNormalizeEquipments, onSimulateFailure }: any) {
+  const markerRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (markerRef.current) {
+      markerRef.current.setIcon(icon);
+    }
+  }, [icon]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={position}
+      icon={icon}
+      draggable={draggable}
+      eventHandlers={{
+        dragend: (e: any) => {
+          const { lat, lng } = e.target.getLatLng();
+          onDragEnd(lat, lng);
+        },
+      }}
+    >
+      {zoom >= LABEL_VISIBLE_ZOOM && (
+        <Tooltip permanent direction="top" offset={[0, -20]} opacity={0.95} className="station-name-tooltip">
+          {stationName}
+        </Tooltip>
+      )}
+      <Popup>
+        <strong>{station.name}</strong>
+        <br />
+        {station.city} - {station.state}
+        <br />
+        Status:{' '}
+        {state === 'broken'
+          ? 'SEM COMUNICAÇÃO (simulação ativa)'
+          : state === 'saturating'
+            ? 'SATURANDO (restou só 1 link)'
+            : state === 'degraded'
+              ? 'ATENUADO (perdeu redundância)'
+              : state === 'trecho_impact'
+                ? 'IMPACTADO POR TRECHO (possível geração de alarmes)'
+                : station.status}
+
+        {station.trechos && station.trechos.length > 0 && (
+          <>
+            <br />
+            <strong style={{ fontSize: 12 }}>Trechos:</strong>{' '}
+            <span style={{ fontSize: 12, color: '#a78bfa' }}>{station.trechos.join(', ')}</span>
+          </>
+        )}
+
+        {touchingTypes.length > 0 && (
+          <>
+            <br />
+            <strong style={{ fontSize: 12 }}>Conexões desta estação:</strong>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
+              {touchingTypes.map((t: any) => (
+                <span key={t.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                  <span style={{ width: 16, height: 0, borderTop: `2px ${t.dashed ? 'dashed' : 'solid'} ${t.color}`, display: 'inline-block' }} />
+                  {t.label}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+
+        <br />
+        <StationActionPanel
+          station={station}
+          state={state}
+          simulationResult={simulationResult}
+          onNormalizeStation={onNormalizeStation}
+          onNormalizeEquipments={onNormalizeEquipments}
+          onSimulateFailure={onSimulateFailure}
+        />
+      </Popup>
+    </Marker>
   );
 }
 
