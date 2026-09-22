@@ -783,9 +783,16 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote }
   onNormalize: () => Promise<void>;
   onSaveNote: (note: string) => Promise<void>;
 }) {
-  const [note, setNote] = useState(simulationResult?.connectionNotes?.[link.id] ?? '');
+  const savedNote = simulationResult?.connectionNotes?.[link.id] ?? '';
+  const [note, setNote] = useState(savedNote);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Sincroniza a nota local sempre que o simulationResult atualizar
+  // (WebSocket de outro usuário, ou carregamento inicial da página)
+  useEffect(() => {
+    setNote(simulationResult?.connectionNotes?.[link.id] ?? '');
+  }, [simulationResult?.connectionNotes, link.id]);
 
   async function handleSave() {
     setSaving(true);
