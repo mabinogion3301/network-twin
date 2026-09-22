@@ -186,6 +186,8 @@ export function GeoMapPage() {
   const [loading, setLoading] = useState(true);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
   const [zoom, setZoom] = useState(INITIAL_ZOOM);
+  // Superaquecimento: estado puramente local/visual — não afeta BFS nem vizinhas
+  const [localOverheatIds, setLocalOverheatIds] = useState<Set<string>>(new Set());
 
   function load() {
     setLoading(true);
@@ -261,8 +263,8 @@ export function GeoMapPage() {
   // Conexões marcadas como rompidas na simulação
   const removedConnectionIds = new Set(simulationResult?.removedConnectionIds ?? []);
 
-  // Estações em superaquecimento — apenas visual, não afeta BFS nem impacto
-  const overheatStationIds = new Set(simulationResult?.overheatStationIds ?? []);
+  // Estações em superaquecimento — estado local, não afeta BFS nem impacto
+  const overheatStationIds = localOverheatIds;
 
   // COREs: prioridade para os retornados pelo backend (mais confiável),
   // fallback para os marcados localmente nas estações
@@ -609,21 +611,11 @@ export function GeoMapPage() {
                     if (res?.data) setSimulationResult(res.data);
                     load();
                   }}
-                  onSimulateOverheat={async () => {
-                    const currentState = await simulationsApi.current().catch(() => null);
-                    const activeConns = [...new Set([...(currentState?.removedConnectionIds ?? []), ...(simulationResult?.removedConnectionIds ?? [])])];
-                    const activeOverheat = [...new Set([...(currentState?.overheatStationIds ?? []), ...(simulationResult?.overheatStationIds ?? []), station.id])];
-                    const res = await api.post('/simulations', { connectionIds: activeConns, overheatStationIds: activeOverheat });
-                    if (res?.data) setSimulationResult(res.data);
-                    load();
+                  onSimulateOverheat={() => {
+                    setLocalOverheatIds(prev => new Set([...prev, station.id]));
                   }}
-                  onNormalizeOverheat={async () => {
-                    const currentState = await simulationsApi.current().catch(() => null);
-                    const activeConns = [...new Set([...(currentState?.removedConnectionIds ?? []), ...(simulationResult?.removedConnectionIds ?? [])])];
-                    const remaining = [...new Set([...(currentState?.overheatStationIds ?? []), ...(simulationResult?.overheatStationIds ?? [])])].filter(id => id !== station.id);
-                    const res = await api.post('/simulations', { connectionIds: activeConns, overheatStationIds: remaining });
-                    if (res?.data) setSimulationResult(res.data);
-                    load();
+                  onNormalizeOverheat={() => {
+                    setLocalOverheatIds(prev => { const s = new Set(prev); s.delete(station.id); return s; });
                   }}
                 />
               );
@@ -639,8 +631,7 @@ export function GeoMapPage() {
 // o Popup que estiver aberto.
 function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName,
   touchingTypes, state, overheating, station, simulationResult,
-  onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: any) {
-  const markerRef = useRef<any>(null);
+  onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: any) {  const markerRef = useRef<any>(null);
 
   useEffect(() => {
     if (markerRef.current) {
@@ -740,9 +731,7 @@ function StationActionPanel({ station, state, overheating, simulationResult, onN
     finally { setSimulating(false); }
   }
 
-  async function handleOverheat() {
-    try { await onSimulateOverheat(); } catch {}
-  }
+  function handleOverheat() { onSimulateOverheat(); }
 
   if (state === 'NORMAL' && !overheating) {
     return (
