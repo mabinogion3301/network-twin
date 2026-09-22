@@ -218,7 +218,7 @@ export function GeoMapPage() {
       if (res?.data) setSimulationResult(res.data);
       load();
     } catch {
-      // falha ao normalizar — estado visual permanece como estava
+      // falha ao normalizar
     }
   }
 
@@ -524,7 +524,11 @@ export function GeoMapPage() {
                           <div style={{ marginTop: 8 }}>
                             <button
                               onClick={async () => {
-                                const active = simulationResult?.removedConnectionIds ?? [];
+                                const currentState = await simulationsApi.current().catch(() => null);
+                                const active = [...new Set([
+                                  ...(currentState?.removedConnectionIds ?? []),
+                                  ...(simulationResult?.removedConnectionIds ?? []),
+                                ])];
                                 const res = await api.post('/simulations', { connectionIds: [...new Set([...active, link.id])] });
                                 if (res?.data) setSimulationResult(res.data);
                                 load();
@@ -564,10 +568,16 @@ export function GeoMapPage() {
                   simulationResult={simulationResult}
                   onNormalizeStation={() => normalizeStation(station.id)}
                   onSimulateFailure={async () => {
+                    // Busca o estado atual do servidor antes de simular — garante
+                    // acumulação correta mesmo se o closure tiver simulationResult desatualizado
+                    const currentState = await simulationsApi.current().catch(() => null);
+                    const activeConns = [
+                      ...(currentState?.removedConnectionIds ?? []),
+                      ...(simulationResult?.removedConnectionIds ?? []),
+                    ];
                     const stationLinkIds = links
                       .filter(l => l.sourceStationId === station.id || l.targetStationId === station.id)
                       .map(l => l.id);
-                    const activeConns = simulationResult?.removedConnectionIds ?? [];
                     const res = await api.post('/simulations', {
                       connectionIds: [...new Set([...activeConns, ...stationLinkIds])],
                     });
