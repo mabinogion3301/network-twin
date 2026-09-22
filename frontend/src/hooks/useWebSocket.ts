@@ -9,6 +9,7 @@ export interface SimulationResult {
   connectionNotes?: Record<string, string>;
   removedConnectionIds: string[];
   failedStationIds?: string[];
+  overheatStationIds?: string[];
   stationStates?: Record<string, StationImpactState>;
   isolatedStationIds?: string[];
   degradingStationIds?: string[];

@@ -86,27 +86,34 @@ const IMPACTED_COLOR  = '#7c3aed'; // roxo
 
 type StationVisualState = 'ISOLATED' | 'DEGRADING' | 'IMPACTED' | 'NORMAL';
 
-function towerIcon(color: string, pulse: 'none' | 'fast' | 'slow') {
+function towerIcon(color: string, pulse: 'none' | 'fast' | 'slow' | 'fire') {
+  const isfire = pulse === 'fire';
   const animation =
     pulse === 'fast' ? 'animation: ntw-pulse-fast 0.9s infinite;' :
-    pulse === 'slow' ? 'animation: ntw-pulse-slow 2s infinite;' : '';
+    pulse === 'slow' ? 'animation: ntw-pulse-slow 2s infinite;' :
+    pulse === 'fire' ? 'animation: ntw-fire 0.4s infinite;' : '';
+
+  const borderColor = isfire ? '#f97316' : color;
   const html = `
-    <div style="
-      width: 34px; height: 34px; border-radius: 8px;
-      background: #0f172a; border: 2px solid ${color};
-      display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 0 8px ${color}80;
-      ${animation}
-      cursor: grab;
-    ">
-      <svg width="20" height="20" viewBox="0 0 64 64">
-        <g stroke="${color}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M32 6 L14 58 M32 6 L50 58" />
-          <path d="M20 30 L44 30 M17 42 L47 42" />
-          <circle cx="32" cy="6" r="5" fill="${color}" stroke="none" />
-          <path d="M24 14 A12 12 0 0 1 40 14" />
-        </g>
-      </svg>
+    <div style="position:relative;width:34px;height:34px;">
+      <div style="
+        width: 34px; height: 34px; border-radius: 8px;
+        background: #0f172a; border: 2px solid ${borderColor};
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 0 8px ${borderColor}80;
+        ${animation}
+        cursor: grab;
+      ">
+        <svg width="20" height="20" viewBox="0 0 64 64">
+          <g stroke="${color}" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M32 6 L14 58 M32 6 L50 58" />
+            <path d="M20 30 L44 30 M17 42 L47 42" />
+            <circle cx="32" cy="6" r="5" fill="${color}" stroke="none" />
+            <path d="M24 14 A12 12 0 0 1 40 14" />
+          </g>
+        </svg>
+      </div>
+      ${isfire ? '<div style="position:absolute;top:-8px;right:-4px;font-size:14px;line-height:1;">🔥</div>' : ''}
     </div>
     <style>
       @keyframes ntw-pulse-fast {
@@ -118,6 +125,13 @@ function towerIcon(color: string, pulse: 'none' | 'fast' | 'slow') {
         0%   { box-shadow: 0 0 4px ${color}60; }
         50%  { box-shadow: 0 0 12px 3px ${color}; }
         100% { box-shadow: 0 0 4px ${color}60; }
+      }
+      @keyframes ntw-fire {
+        0%   { box-shadow: 0 0 8px #f97316, 0 0 16px #ef4444; border-color: #f97316; }
+        25%  { box-shadow: 0 0 14px #ef4444, 0 0 24px #f97316; border-color: #ef4444; }
+        50%  { box-shadow: 0 0 10px #f59e0b, 0 0 20px #ef4444; border-color: #f59e0b; }
+        75%  { box-shadow: 0 0 16px #f97316, 0 0 28px #ef4444; border-color: #f97316; }
+        100% { box-shadow: 0 0 8px #f97316, 0 0 16px #ef4444; border-color: #f97316; }
       }
     </style>`;
   return L.divIcon({ html, className: '', iconSize: [34, 34], iconAnchor: [17, 17] });
@@ -247,6 +261,9 @@ export function GeoMapPage() {
   // Conexões marcadas como rompidas na simulação
   const removedConnectionIds = new Set(simulationResult?.removedConnectionIds ?? []);
 
+  // Estações em superaquecimento — apenas visual, não afeta BFS nem impacto
+  const overheatStationIds = new Set(simulationResult?.overheatStationIds ?? []);
+
   // COREs: prioridade para os retornados pelo backend (mais confiável),
   // fallback para os marcados localmente nas estações
   const localCoreIds = stations.filter((s) => s.isCore).map((s) => s.id);
@@ -356,7 +373,8 @@ export function GeoMapPage() {
     return fallback;
   }
 
-  function pulseForState(state: StationVisualState): 'none' | 'fast' | 'slow' {
+  function pulseForState(state: StationVisualState, overheating: boolean): 'none' | 'fast' | 'slow' | 'fire' {
+    if (overheating) return 'fire';
     if (state === 'ISOLATED') return 'fast';
     if (state === 'IMPACTED') return 'slow';
     return 'none';
@@ -551,7 +569,8 @@ export function GeoMapPage() {
             {stationsWithCoords.map((station) => {
               const state = stationVisualState(station);
               const color = colorForState(state, STATUS_COLORS[station.status] ?? '#94a3b8');
-              const pulse = pulseForState(state);
+              const overheating = overheatStationIds.has(station.id);
+              const pulse = pulseForState(state, overheating);
               const touchingTypes = typesTouchingStation(station.id);
               const icon = towerIcon(color, pulse);
 
@@ -566,23 +585,43 @@ export function GeoMapPage() {
                   stationName={station.name}
                   touchingTypes={touchingTypes}
                   state={state}
+                  overheating={overheating}
                   station={station}
                   simulationResult={simulationResult}
                   onNormalizeStation={() => normalizeStation(station.id)}
                   onSimulateFailure={async () => {
-                    // Busca o estado atual do servidor antes de simular — garante
-                    // acumulação correta mesmo se o closure tiver simulationResult desatualizado
                     const currentState = await simulationsApi.current().catch(() => null);
-                    const activeConns = [
+                    const activeConns = [...new Set([
                       ...(currentState?.removedConnectionIds ?? []),
                       ...(simulationResult?.removedConnectionIds ?? []),
-                    ];
+                    ])];
+                    const activeOverheat = [...new Set([
+                      ...(currentState?.overheatStationIds ?? []),
+                      ...(simulationResult?.overheatStationIds ?? []),
+                    ])];
                     const stationLinkIds = links
                       .filter(l => l.sourceStationId === station.id || l.targetStationId === station.id)
                       .map(l => l.id);
                     const res = await api.post('/simulations', {
                       connectionIds: [...new Set([...activeConns, ...stationLinkIds])],
+                      overheatStationIds: activeOverheat,
                     });
+                    if (res?.data) setSimulationResult(res.data);
+                    load();
+                  }}
+                  onSimulateOverheat={async () => {
+                    const currentState = await simulationsApi.current().catch(() => null);
+                    const activeConns = [...new Set([...(currentState?.removedConnectionIds ?? []), ...(simulationResult?.removedConnectionIds ?? [])])];
+                    const activeOverheat = [...new Set([...(currentState?.overheatStationIds ?? []), ...(simulationResult?.overheatStationIds ?? []), station.id])];
+                    const res = await api.post('/simulations', { connectionIds: activeConns, overheatStationIds: activeOverheat });
+                    if (res?.data) setSimulationResult(res.data);
+                    load();
+                  }}
+                  onNormalizeOverheat={async () => {
+                    const currentState = await simulationsApi.current().catch(() => null);
+                    const activeConns = [...new Set([...(currentState?.removedConnectionIds ?? []), ...(simulationResult?.removedConnectionIds ?? [])])];
+                    const remaining = [...new Set([...(currentState?.overheatStationIds ?? []), ...(simulationResult?.overheatStationIds ?? [])])].filter(id => id !== station.id);
+                    const res = await api.post('/simulations', { connectionIds: activeConns, overheatStationIds: remaining });
                     if (res?.data) setSimulationResult(res.data);
                     load();
                   }}
@@ -599,8 +638,8 @@ export function GeoMapPage() {
 // chama setIcon() diretamente no marker sem desmontar o componente nem fechar
 // o Popup que estiver aberto.
 function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName,
-  touchingTypes, state, station, simulationResult,
-  onNormalizeStation, onSimulateFailure }: any) {
+  touchingTypes, state, overheating, station, simulationResult,
+  onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: any) {
   const markerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -668,9 +707,12 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
         <StationActionPanel
           station={station}
           state={state}
+          overheating={overheating}
           simulationResult={simulationResult}
           onNormalizeStation={onNormalizeStation}
           onSimulateFailure={onSimulateFailure}
+          onSimulateOverheat={onSimulateOverheat}
+          onNormalizeOverheat={onNormalizeOverheat}
         />
       </Popup>
     </Marker>
@@ -678,53 +720,68 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
 }
 
 // Painel de ações no popup da estação: simular falha ou normalizar + nota
-function StationActionPanel({ station, state, simulationResult, onNormalizeStation, onSimulateFailure }: {
+function StationActionPanel({ station, state, overheating, simulationResult, onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: {
   station: GeoStation;
   state: StationVisualState;
+  overheating: boolean;
   simulationResult: SimulationResult | null;
   onNormalizeStation: () => void;
   onSimulateFailure: () => Promise<void>;
+  onSimulateOverheat: () => Promise<void>;
+  onNormalizeOverheat: () => Promise<void>;
 }) {
   const [simulating, setSimulating] = useState(false);
   const [error, setError] = useState('');
 
   async function handleSimulate() {
-    setSimulating(true);
-    setError('');
-    try {
-      await onSimulateFailure();
-    } catch (e: any) {
-      setError(e?.response?.data?.message ?? 'Erro ao simular falha');
-    } finally {
-      setSimulating(false);
-    }
+    setSimulating(true); setError('');
+    try { await onSimulateFailure(); }
+    catch (e: any) { setError(e?.response?.data?.message ?? 'Erro ao simular'); }
+    finally { setSimulating(false); }
   }
 
-  if (state === 'NORMAL') {
+  async function handleOverheat() {
+    try { await onSimulateOverheat(); } catch {}
+  }
+
+  if (state === 'NORMAL' && !overheating) {
     return (
-      <div style={{ marginTop: 8 }}>
-        <button
-          onClick={handleSimulate}
-          disabled={simulating}
-          style={{ width: '100%', padding: '7px', background: '#ef4444', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: simulating ? 0.7 : 1 }}
-        >
+      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <button onClick={handleSimulate} disabled={simulating}
+          style={{ width: '100%', padding: '7px', background: '#ef4444', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: simulating ? 0.7 : 1 }}>
           {simulating ? 'Simulando...' : '⚡ Simular Perda de Gerência'}
         </button>
-        {error && <div style={{ color: '#ef4444', fontSize: 11, marginTop: 4 }}>{error}</div>}
-        {station.isCore && <div style={{ fontSize: 10, color: '#3b82f6', marginTop: 4, textAlign: 'center' }}>★ Ponto de Gerência (CORE)</div>}
-        <em style={{ display: 'block', fontSize: 10, color: '#64748b', marginTop: 4, textAlign: 'center' }}>Arraste a torre para reposicionar.</em>
+        <button onClick={handleOverheat}
+          style={{ width: '100%', padding: '7px', background: '#f97316', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+          🔥 Simular Superaquecimento
+        </button>
+        {station.isCore && <div style={{ fontSize: 10, color: '#3b82f6', textAlign: 'center' }}>★ Ponto de Gerência (CORE)</div>}
+        {error && <div style={{ color: '#ef4444', fontSize: 11 }}>{error}</div>}
+        <em style={{ display: 'block', fontSize: 10, color: '#64748b', textAlign: 'center' }}>Arraste para reposicionar.</em>
       </div>
     );
   }
 
   return (
-    <div style={{ marginTop: 8 }}>
-      <button
-        onClick={onNormalizeStation}
-        style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-      >
-        ✓ Normalizar Estação
-      </button>
+    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {overheating && (
+        <button onClick={onNormalizeOverheat}
+          style={{ width: '100%', padding: '7px', background: '#f97316', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+          🧊 Normalizar Superaquecimento
+        </button>
+      )}
+      {!overheating && (
+        <button onClick={handleOverheat}
+          style={{ width: '100%', padding: '7px', background: '#f97316', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+          🔥 Simular Superaquecimento
+        </button>
+      )}
+      {state !== 'NORMAL' && (
+        <button onClick={onNormalizeStation}
+          style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+          ✓ Normalizar Estação
+        </button>
+      )}
     </div>
   );
 }

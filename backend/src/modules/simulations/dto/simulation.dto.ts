@@ -17,4 +17,9 @@ export class RunSimulationDto {
   @IsArray()
   @IsString({ each: true })
   failedStationIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  overheatStationIds?: string[];
 }

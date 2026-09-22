@@ -69,9 +69,12 @@ export class SimulationsService {
       failedConnectionIds: allFailedConnectionIds,
     });
 
+    const overheatStationIds = dto.overheatStationIds ?? [];
+
     const result = {
       removedConnectionIds: resolvedConnectionIds,
       failedStationIds,
+      overheatStationIds,
       stationStates: impact.stationStates,
       isolatedStationIds: impact.isolatedStationIds,
       degradingStationIds: impact.degradingStationIds,
