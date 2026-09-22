@@ -247,8 +247,11 @@ export function GeoMapPage() {
   // Conexões marcadas como rompidas na simulação
   const removedConnectionIds = new Set(simulationResult?.removedConnectionIds ?? []);
 
-  // COREs das estações carregadas — ponto de partida do BFS
-  const coreStationIds = stations.filter((s) => s.isCore).map((s) => s.id);
+  // COREs: prioridade para os retornados pelo backend (mais confiável),
+  // fallback para os marcados localmente nas estações
+  const localCoreIds = stations.filter((s) => s.isCore).map((s) => s.id);
+  const backendCoreIds = simulationResult?.coreStationIds ?? [];
+  const coreStationIds = localCoreIds.length > 0 ? localCoreIds : backendCoreIds;
 
   // Calcula o estado de cada estação via BFS a partir dos COREs.
   // Roda no frontend usando os dados já carregados (links + stations),
@@ -287,15 +290,15 @@ export function GeoMapPage() {
     }
 
     // Estações alcançáveis a partir de qualquer CORE no grafo operacional.
-    // Se não houver CORE definido, usa o maior componente conectado como
-    // "rede gerenciada" — qualquer componente menor separado é ISOLADO.
+    // Quando COREs existem: BFS a partir deles.
+    // Se o CORE perdeu TODAS as conexões (ex: perda de gerência simulada),
+    // o BFS só alcança o próprio CORE → todas as outras estações ficam ISOLADAS.
+    // Sem CORE: maior componente conectado = gerenciado.
     let managedStations: Set<string>;
 
     if (coreStationIds.length > 0) {
-      // BFS a partir dos COREs (método preferencial)
       managedStations = bfs(opAdj, coreStationIds);
     } else {
-      // Sem CORE: encontra todos os componentes conectados e usa o maior
       const visited = new Set<string>();
       const components: Array<Set<string>> = [];
       for (const st of stations) {
@@ -305,7 +308,6 @@ export function GeoMapPage() {
           components.push(comp);
         }
       }
-      // O maior componente é a "rede gerenciada"
       managedStations = components.sort((a, b) => b.size - a.size)[0] ?? new Set<string>();
     }
 
