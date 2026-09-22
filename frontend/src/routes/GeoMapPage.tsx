@@ -247,36 +247,104 @@ export function GeoMapPage() {
   // Conexões marcadas como rompidas na simulação
   const removedConnectionIds = new Set(simulationResult?.removedConnectionIds ?? []);
 
-  // Estado de cada estação calculado pelo motor de impacto no backend.
-  // Fallback: se stationStates vier vazio (backend antigo ou sem equipamentos
-  // nas conexões), calcula localmente pela análise das conexões rompidas.
-  const stationStates = simulationResult?.stationStates ?? {};
-  const hasEngineResult = Object.keys(stationStates).length > 0;
+  // COREs das estações carregadas — ponto de partida do BFS
+  const coreStationIds = stations.filter((s) => s.isCore).map((s) => s.id);
 
-  // Para colorir os links: links removidos = vermelhos
-  function stationVisualState(station: GeoStation): StationVisualState {
-    if (!simulationResult) return 'NORMAL';
+  // Calcula o estado de cada estação via BFS a partir dos COREs.
+  // Roda no frontend usando os dados já carregados (links + stations),
+  // garantindo resultado correto independente do que o backend retornar.
+  const computedStationStates = (() => {
+    const result: Record<string, StationVisualState> = {};
+    if (!simulationResult || removedConnectionIds.size === 0) return result;
 
-    // Motor do backend — usa se disponível
-    if (hasEngineResult) {
-      return (stationStates[station.id] ?? 'NORMAL') as StationVisualState;
+    // Grafo completo e grafo operacional (sem falhas)
+    const fullAdj = new Map<string, Set<string>>();
+    const opAdj   = new Map<string, Set<string>>();
+
+    for (const link of links) {
+      if (!fullAdj.has(link.sourceStationId)) fullAdj.set(link.sourceStationId, new Set());
+      if (!fullAdj.has(link.targetStationId)) fullAdj.set(link.targetStationId, new Set());
+      fullAdj.get(link.sourceStationId)!.add(link.targetStationId);
+      fullAdj.get(link.targetStationId)!.add(link.sourceStationId);
+
+      if (removedConnectionIds.has(link.id)) continue;
+      if (!opAdj.has(link.sourceStationId)) opAdj.set(link.sourceStationId, new Set());
+      if (!opAdj.has(link.targetStationId)) opAdj.set(link.targetStationId, new Set());
+      opAdj.get(link.sourceStationId)!.add(link.targetStationId);
+      opAdj.get(link.targetStationId)!.add(link.sourceStationId);
     }
 
-    // Fallback local: analisa os links rompidos diretamente
-    const removedIds = new Set(simulationResult.removedConnectionIds ?? []);
-    if (removedIds.size === 0) return 'NORMAL';
+    function bfs(adj: Map<string, Set<string>>, sources: string[]): Set<string> {
+      const visited = new Set<string>(sources);
+      const queue = [...sources];
+      while (queue.length > 0) {
+        const curr = queue.shift()!;
+        for (const nb of (adj.get(curr) ?? new Set<string>())) {
+          if (!visited.has(nb)) { visited.add(nb); queue.push(nb); }
+        }
+      }
+      return visited;
+    }
 
-    const touching = links.filter(
-      (l) => l.sourceStationId === station.id || l.targetStationId === station.id,
-    );
-    const remaining = touching.filter((l) => !removedIds.has(l.id));
+    // Estações alcançáveis a partir de qualquer CORE no grafo operacional.
+    // Se não houver CORE definido, usa o maior componente conectado como
+    // "rede gerenciada" — qualquer componente menor separado é ISOLADO.
+    let managedStations: Set<string>;
 
-    if (touching.length > 0 && remaining.length === 0) return 'ISOLATED';
-    if (remaining.length < touching.length) return 'DEGRADING';
-    // Está na zona de impacto se algum vizinho tem conexão rompida
-    const neighborAffected = touching.some((l) => removedIds.has(l.id));
-    if (neighborAffected) return 'IMPACTED';
-    return 'NORMAL';
+    if (coreStationIds.length > 0) {
+      // BFS a partir dos COREs (método preferencial)
+      managedStations = bfs(opAdj, coreStationIds);
+    } else {
+      // Sem CORE: encontra todos os componentes conectados e usa o maior
+      const visited = new Set<string>();
+      const components: Array<Set<string>> = [];
+      for (const st of stations) {
+        if (!visited.has(st.id)) {
+          const comp = bfs(opAdj, [st.id]);
+          comp.forEach((id) => visited.add(id));
+          components.push(comp);
+        }
+      }
+      // O maior componente é a "rede gerenciada"
+      managedStations = components.sort((a, b) => b.size - a.size)[0] ?? new Set<string>();
+    }
+
+    // Zona de impacto: tudo conectado às pontas das falhas
+    const failureEndpoints = new Set<string>();
+    for (const link of links) {
+      if (removedConnectionIds.has(link.id)) {
+        failureEndpoints.add(link.sourceStationId);
+        failureEndpoints.add(link.targetStationId);
+      }
+    }
+    const failureZone = bfs(opAdj, [...failureEndpoints]);
+
+    for (const station of stations) {
+      const origDeg = (fullAdj.get(station.id) ?? new Set()).size;
+      const currDeg = (opAdj.get(station.id)  ?? new Set()).size;
+
+      if (!managedStations.has(station.id)) {
+        result[station.id] = 'ISOLATED';
+      } else if (currDeg < origDeg) {
+        result[station.id] = 'DEGRADING';
+      } else if (failureZone.has(station.id)) {
+        result[station.id] = 'IMPACTED';
+      } else {
+        result[station.id] = 'NORMAL';
+      }
+    }
+
+    return result;
+  })();
+
+  // Usa o resultado do backend se vier completo, senão usa o calculado localmente
+  const backendStates  = simulationResult?.stationStates ?? {};
+  const hasBackend     = Object.keys(backendStates).length > 0;
+  const stationStates  = hasBackend ? backendStates : computedStationStates;
+
+  function stationVisualState(station: GeoStation): StationVisualState {
+    if (!simulationResult) return 'NORMAL';
+    return (stationStates[station.id] ?? 'NORMAL') as StationVisualState;
   }
 
   function colorForState(state: StationVisualState, fallback: string): string {
