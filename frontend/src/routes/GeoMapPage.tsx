@@ -570,6 +570,7 @@ export function GeoMapPage() {
                             link={link}
                             simulationResult={simulationResult}
                             failureState={failureState}
+                            onRefresh={() => failuresApi.impact().then(setFailureState)}
                             onNormalize={async () => {
                               const remaining = (simulationResult?.removedConnectionIds ?? []).filter(id => id !== link.id);
                               await normalizeIds(remaining);
@@ -642,6 +643,7 @@ export function GeoMapPage() {
                     setLocalOverheatIds(prev => { const s = new Set(prev); s.delete(station.id); return s; });
                   }}
                   failureState={failureState}
+                  onRefresh={() => failuresApi.impact().then(setFailureState)}
                 />
               );
             })}
@@ -686,7 +688,7 @@ const popInp: React.CSSProperties = {
 };
 
 function StationPopup({ station, state, overheating, stationActiveFailures, stationAllFailures,
-  onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: any) {
+  onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat, onRefresh }: any) {
 
   // Fluxo em etapas: main → selectType → writeNote → confirm → restoreConfirm
   const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm'>('main');
@@ -716,6 +718,7 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
         severity: 'HIGH', note: note || undefined,
       });
       setView('main'); setSelectedType(''); setNote('');
+      onRefresh?.();
     } catch (e: any) {
       setSaveError(toErrorStr(e) || 'Erro ao registrar — verifique o backend.');
     } finally { setSaving(false); }
@@ -726,12 +729,13 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
     try { await api.patch(`/failures/${restoreTarget.id}/restore`); }
     catch {}
     setView('main'); setRestoreTarget(null);
+    onRefresh?.();
   }
 
   async function saveEditNote() {
     if (!editTarget) return;
     setSaving(true);
-    try { await api.patch(`/failures/${editTarget.id}/note`, { note: editNote }); setView('main'); }
+    try { await api.patch(`/failures/${editTarget.id}/note`, { note: editNote }); setView('main'); setEditTarget(null); onRefresh?.(); }
     finally { setSaving(false); }
   }
 
@@ -912,7 +916,7 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
 function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName,
   touchingTypes, state, overheating, failureBadges, station, simulationResult,
   onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat,
-  failureState }: any) {
+  failureState, onRefresh }: any) {
   const markerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -951,6 +955,7 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
             onSimulateFailure={onSimulateFailure}
             onSimulateOverheat={onSimulateOverheat}
             onNormalizeOverheat={onNormalizeOverheat}
+            onRefresh={onRefresh}
           />
         </PopupErrorBoundary>
       </Popup>
@@ -959,12 +964,13 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
 }
 
 // Popup de conexão/nó — fluxo: info → simular falha → tipo → nota → confirmar → restabelecer
-function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, failureState }: {
+function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, failureState, onRefresh }: {
   link: any;
   simulationResult: SimulationResult | null;
   onNormalize: () => Promise<void>;
   onSaveNote: (note: string) => Promise<void>;
   failureState: FailureImpactState | null;
+  onRefresh?: () => void;
 }) {
   const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm'>('main');
   const [selectedType, setSelectedType] = useState('');
@@ -996,6 +1002,7 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, 
         severity: 'HIGH', note: note || undefined,
       });
       setView('main'); setSelectedType(''); setNote('');
+      onRefresh?.();
     } catch (e: any) {
       setSaveError(toErrorStr(e));
     } finally { setSaving(false); }
@@ -1006,6 +1013,7 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, 
     try { await api.patch(`/failures/${nodeFailure.id}/restore`); }
     catch {}
     setView('main');
+    onRefresh?.();
   }
 
   async function saveSimNote() {
