@@ -684,13 +684,14 @@ function StationPopup({ station, state, overheating, touchingTypes, simulationRe
   const [failureType, setFailureType] = useState('MANAGEMENT_FAILURE');
   const [failureNote, setFailureNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [noteTarget, setNoteTarget] = useState<any>(null);
   const [noteText, setNoteText] = useState('');
 
   const muted: React.CSSProperties = { color: '#64748b', fontSize: 11 };
 
   async function registerFailure() {
-    setSaving(true);
+    setSaving(true); setSaveError('');
     try {
       await api.post('/failures', {
         type: failureType, targetType: 'STATION',
@@ -698,27 +699,36 @@ function StationPopup({ station, state, overheating, touchingTypes, simulationRe
         severity: 'HIGH', note: failureNote || undefined,
       });
       setView('main'); setFailureNote('');
+    } catch (e: any) {
+      setSaveError(e?.response?.data?.message ?? 'Erro ao registrar falha. Verifique se o backend está rodando.');
     } finally { setSaving(false); }
   }
 
   async function runSimFailure() {
-    setSaving(true);
+    setSaving(true); setSaveError('');
     try {
       if (failureType === 'OVERHEATING') onSimulateOverheat();
       else await onSimulateFailure();
       setView('main'); setFailureNote('');
+    } catch (e: any) {
+      setSaveError(e?.response?.data?.message ?? 'Erro ao simular falha.');
     } finally { setSaving(false); }
   }
 
-  async function restoreFailure(id: string) { await api.patch(`/failures/${id}/restore`); }
+  async function restoreFailure(id: string) {
+    try { await api.patch(`/failures/${id}/restore`); }
+    catch { /* WebSocket atualizará quando chegar */ }
+  }
 
   function openAddNote(failure: any) { setNoteTarget(failure); setNoteText(failure.note ?? ''); setView('addNote'); }
 
   async function saveNote() {
     if (!noteTarget) return;
     setSaving(true);
-    await api.patch(`/failures/${noteTarget.id}/note`, { note: noteText });
-    setSaving(false); setView('main');
+    try {
+      await api.patch(`/failures/${noteTarget.id}/note`, { note: noteText });
+      setView('main');
+    } finally { setSaving(false); }
   }
 
   if (view === 'main') return (
@@ -781,6 +791,7 @@ function StationPopup({ station, state, overheating, touchingTypes, simulationRe
       <textarea value={failureNote} onChange={e => setFailureNote(e.target.value)}
         placeholder="Nota / observação (opcional)..." rows={3}
         style={{ ...popInp, resize: 'vertical', marginBottom: 8 }} />
+      {saveError && <div style={{ color: '#ef4444', fontSize: 11, marginBottom: 6 }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: 5 }}>
         <button onClick={() => setView('main')} style={popBtn('#334155')}>Cancelar</button>
         <button onClick={view === 'newFailure' ? registerFailure : runSimFailure} disabled={saving}
