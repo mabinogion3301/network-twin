@@ -10,13 +10,14 @@ async function bootstrap() {
   // para restringir CORS só ao seu domínio. Sem essa variável, libera tudo
   // (conveniente em desenvolvimento, mas defina em produção por segurança).
   app.enableCors({ origin: process.env.FRONTEND_URL || '*' });
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(new ValidationPipe({ transform: true }));
   app.useGlobalFilters(new HttpExceptionFilter());
   app.setGlobalPrefix('api');
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
-  console.log(`Network Twin API rodando em http://localhost:${port}/api`);
+  console.log(`Network Twin API v1.1.0 rodando em http://localhost:${port}/api`);
+  console.log(`Módulos carregados: Auth, Stations, Simulations, Failures, Topology`);
 }
 
 bootstrap();

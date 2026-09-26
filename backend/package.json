@@ -1,6 +1,6 @@
 {
   "name": "network-twin-backend",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "scripts": {
     "build": "nest build",
@@ -48,5 +48,6 @@
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.2"
-  }
+  },
+  "description": "Network Twin NOC Backend - with Failures module"
 }
