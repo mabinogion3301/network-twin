@@ -3,6 +3,7 @@ import { LoginPage } from './routes/LoginPage';
 import { GeoMapPage } from './routes/GeoMapPage';
 import { DashboardPage } from './routes/DashboardPage';
 import { StationsPage } from './routes/StationsPage';
+import { FailuresPage } from './routes/FailuresPage';
 import { ProtectedRoute } from './routes/ProtectedRoute';
 import { AppShell } from './components/layout/AppShell';
 
@@ -15,6 +16,7 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/geo-map" element={<GeoMapPage />} />
+            <Route path="/failures" element={<FailuresPage />} />
             <Route path="/stations" element={<StationsPage />} />
           </Route>
         </Route>

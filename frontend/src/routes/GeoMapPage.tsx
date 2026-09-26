@@ -6,7 +6,8 @@ import { topologyApi } from '../services/api/auth.api';
 import { stationsApi } from '../services/api/stations.api';
 import { api } from '../services/api/client';
 import { simulationsApi } from '../services/api/dashboard.api';
-import { useWebSocket, SimulationResult } from '../hooks/useWebSocket';
+import { failuresApi } from '../services/api/failures.api';
+import { FailureImpactState, SimulationResult, useWebSocket } from '../hooks/useWebSocket';
 
 interface GeoStation {
   id: string;
@@ -86,7 +87,16 @@ const IMPACTED_COLOR  = '#7c3aed'; // roxo
 
 type StationVisualState = 'ISOLATED' | 'DEGRADING' | 'IMPACTED' | 'NORMAL';
 
-function towerIcon(color: string, pulse: 'none' | 'fast' | 'slow' | 'fire') {
+const FAILURE_BADGE_ICONS: Record<string, string> = {
+  MANAGEMENT_FAILURE:    '🚫',
+  OVERHEATING:           '🔥',
+  POWER_FAILURE:         '⚡',
+  EQUIPMENT_UNAVAILABLE: '🔧',
+  NODE_RUPTURE:          '💥',
+  NODE_ATTENUATION:      '📉',
+};
+
+function towerIcon(color: string, pulse: 'none' | 'fast' | 'slow' | 'fire', failureBadges: string[] = []) {
   const isfire = pulse === 'fire';
   const animation =
     pulse === 'fast' ? 'animation: ntw-pulse-fast 0.9s infinite;' :
@@ -114,6 +124,9 @@ function towerIcon(color: string, pulse: 'none' | 'fast' | 'slow' | 'fire') {
         </svg>
       </div>
       ${isfire ? '<div style="position:absolute;top:-8px;right:-4px;font-size:14px;line-height:1;">🔥</div>' : ''}
+      ${failureBadges.filter(b => b !== 'OVERHEATING').slice(0, 3).map((b, i) =>
+        `<div style="position:absolute;top:${-8 + i * 11}px;left:-8px;font-size:11px;line-height:1;">${FAILURE_BADGE_ICONS[b] ?? '⚠️'}</div>`
+      ).join('')}
     </div>
     <style>
       @keyframes ntw-pulse-fast {
@@ -188,6 +201,8 @@ export function GeoMapPage() {
   const [zoom, setZoom] = useState(INITIAL_ZOOM);
   // Superaquecimento: estado puramente local/visual — não afeta BFS nem vizinhas
   const [localOverheatIds, setLocalOverheatIds] = useState<Set<string>>(new Set());
+  // Estado de falhas operacionais (do módulo de Falhas, distinto da simulação)
+  const [failureState, setFailureState] = useState<FailureImpactState | null>(null);
 
   function load() {
     setLoading(true);
@@ -209,6 +224,8 @@ export function GeoMapPage() {
     simulationsApi.current().then((result) => {
       if (result) setSimulationResult(result as SimulationResult);
     });
+    // Carrega falhas operacionais ativas
+    failuresApi.impact().then(setFailureState);
   }, []);
 
   // Sempre que QUALQUER usuário conectado dispara OU normaliza uma
@@ -221,8 +238,8 @@ export function GeoMapPage() {
   // conexão, o backend emite 'topology:changed' e recarregamos o mapa aqui
   // — garante que todos os PCs vejam a topologia sempre atualizada.
   const handleTopologyChanged = useCallback(() => { load(); }, []);
-
-  useWebSocket(handleSimulationResult, handleTopologyChanged);
+  const handleFailureUpdate = useCallback((state: FailureImpactState) => { setFailureState(state); }, []);
+  useWebSocket(handleSimulationResult, handleTopologyChanged, handleFailureUpdate);
 
   // "Normalizar" — seja de uma estação específica ou tudo — funciona
   // EXATAMENTE como "Romper": chama o mesmo endpoint, que persiste o novo
@@ -260,8 +277,11 @@ export function GeoMapPage() {
   const stationsWithoutCoords = stations.filter((s) => s.latitude == null || s.longitude == null);
   const stationById = Object.fromEntries(stations.map((s) => [s.id, s]));
 
-  // Conexões marcadas como rompidas na simulação
-  const removedConnectionIds = new Set(simulationResult?.removedConnectionIds ?? []);
+  // Conexões removidas: da simulação manual + das falhas operacionais ativas
+  const removedConnectionIds = new Set([
+    ...(simulationResult?.removedConnectionIds ?? []),
+    ...(failureState?.removedConnectionIds ?? []),
+  ]);
 
   // Estações em superaquecimento — estado local, não afeta BFS nem impacto
   const overheatStationIds = localOverheatIds;
@@ -574,7 +594,11 @@ export function GeoMapPage() {
               const overheating = overheatStationIds.has(station.id);
               const pulse = pulseForState(state, overheating);
               const touchingTypes = typesTouchingStation(station.id);
-              const icon = towerIcon(color, pulse);
+              // Badges de falhas operacionais ativas nesta estação
+              const stationActiveBadges = (failureState?.stationFailures ?? [])
+                .filter(f => f.stationId === station.id)
+                .map(f => f.type);
+              const icon = towerIcon(color, pulse, stationActiveBadges);
 
               return (
                 <DynamicMarker
@@ -586,6 +610,7 @@ export function GeoMapPage() {
                   zoom={zoom}
                   stationName={station.name}
                   touchingTypes={touchingTypes}
+                  failureBadges={stationActiveBadges}
                   state={state}
                   overheating={overheating}
                   station={station}
@@ -630,7 +655,7 @@ export function GeoMapPage() {
 // chama setIcon() diretamente no marker sem desmontar o componente nem fechar
 // o Popup que estiver aberto.
 function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName,
-  touchingTypes, state, overheating, station, simulationResult,
+  touchingTypes, state, overheating, failureBadges, station, simulationResult,
   onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: any) {  const markerRef = useRef<any>(null);
 
   useEffect(() => {

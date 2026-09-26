@@ -231,3 +231,50 @@ model FailureSimulation {
   updatedAt            DateTime @updatedAt
   createdAt            DateTime @default(now())
 }
+
+// ─── Gerenciamento de Falhas Operacionais ─────────────────────────────────────
+
+enum FailureType {
+  MANAGEMENT_FAILURE       // Falha de Gerência
+  OVERHEATING              // Superaquecimento
+  POWER_FAILURE            // Falta de Energia
+  EQUIPMENT_UNAVAILABLE    // Indisponibilidade de Equipamento
+  NODE_RUPTURE             // Rompimento de Nó
+  NODE_ATTENUATION         // Atenuação de Nó
+}
+
+enum FailureTargetType {
+  STATION
+  CONNECTION
+}
+
+enum FailureSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum FailureStatus {
+  ACTIVE
+  ACKNOWLEDGED
+  RESTORED
+}
+
+model Failure {
+  id             String            @id @default(uuid())
+  type           FailureType
+  targetType     FailureTargetType
+  targetId       String
+  targetName     String
+  severity       FailureSeverity   @default(HIGH)
+  status         FailureStatus     @default(ACTIVE)
+  note           String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  createdBy      String
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  restoredAt     DateTime?
+  restoredBy     String?
+}

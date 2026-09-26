@@ -20,8 +20,8 @@ import { SimulationsModule } from './modules/simulations/simulations.module';
 import { EventsGatewayModule } from './modules/events-gateway/events-gateway.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { SearchModule } from './modules/search/search.module';
+import { FailuresModule } from './modules/failures/failures.module';
 import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor';
-
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -44,6 +44,7 @@ import { AuditLogInterceptor } from './common/interceptors/audit-log.interceptor
     EventsGatewayModule,
     DashboardModule,
     SearchModule,
+    FailuresModule,
   ],
   providers: [
     // Registra o AuditLogInterceptor globalmente — assim ele tem acesso a

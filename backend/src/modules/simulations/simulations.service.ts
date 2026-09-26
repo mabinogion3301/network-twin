@@ -46,13 +46,9 @@ export class SimulationsService {
       }))
       .filter((c) => c.stationAId && c.stationBId && c.stationAId !== c.stationBId);
 
-
-
     const allStationIds = allStations.map((s) => s.id);
     const coreStationIds = allStations.filter((s) => s.isCore).map((s) => s.id);
 
-    // Conexões rompidas = as explicitamente passadas + todas que tocam estações
-    // com perda de gerência (simular queda da estação)
     const stationFailureConnIds = failedStationIds.length > 0
       ? stationConnections
           .filter((c) => failedStationIds.includes(c.stationAId) || failedStationIds.includes(c.stationBId))
@@ -60,6 +56,7 @@ export class SimulationsService {
       : [];
 
     const allFailedConnectionIds = [...new Set([...resolvedConnectionIds, ...stationFailureConnIds])];
+
     console.log(`[Impact] ${allStations.length} estações, ${stationConnections.length} conexões inter-estação, ${allFailedConnectionIds.length} falhas, ${coreStationIds.length} COREs`);
 
     // Executa o motor de impacto
@@ -68,7 +65,6 @@ export class SimulationsService {
       allStationIds,
       coreStationIds,
       failedConnectionIds: allFailedConnectionIds,
-
     });
 
     const overheatStationIds = dto.overheatStationIds ?? [];

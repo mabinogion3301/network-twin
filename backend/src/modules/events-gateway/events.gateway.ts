@@ -33,4 +33,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   broadcastTopologyChanged() {
     this.server.emit('topology:changed');
   }
+
+  /** Disparado sempre que uma Failure é criada, alterada ou restabelecida. */
+  broadcastFailureUpdate(payload: unknown) {
+    this.server.emit('failure:update', payload);
+  }
 }
