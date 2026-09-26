@@ -104,6 +104,7 @@ function towerIcon(color: string, pulse: 'none' | 'fast' | 'slow' | 'fire', fail
     pulse === 'fire' ? 'animation: ntw-fire 0.4s infinite;' : '';
 
   const borderColor = isfire ? '#f97316' : color;
+  const badgeCount = failureBadges.length;
   const html = `
     <div style="position:relative;width:34px;height:34px;">
       <div style="
@@ -123,10 +124,7 @@ function towerIcon(color: string, pulse: 'none' | 'fast' | 'slow' | 'fire', fail
           </g>
         </svg>
       </div>
-      ${isfire ? '<div style="position:absolute;top:-8px;right:-4px;font-size:14px;line-height:1;">🔥</div>' : ''}
-      ${failureBadges.filter(b => b !== 'OVERHEATING').slice(0, 3).map((b, i) =>
-        `<div style="position:absolute;top:${-8 + i * 11}px;left:-8px;font-size:11px;line-height:1;">${FAILURE_BADGE_ICONS[b] ?? '⚠️'}</div>`
-      ).join('')}
+      ${badgeCount > 0 ? `<div style="position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:#ef4444;border:1.5px solid #0f172a;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:white;line-height:1;">${badgeCount}</div>` : ''}
     </div>
     <style>
       @keyframes ntw-pulse-fast {
@@ -548,39 +546,20 @@ export function GeoMapPage() {
                             {broken ? '⚠ ROMPIDO' : link.status}
                           </span>
                         </div>
-                        {/* Ações e nota — só para conexões rompidas */}
-                        {broken ? (
-                          <ConnectionNotePanel
-                            link={link}
-                            simulationResult={simulationResult}
-                            onNormalize={async () => {
-                              const remaining = (simulationResult?.removedConnectionIds ?? []).filter(id => id !== link.id);
-                              await normalizeIds(remaining);
-                            }}
-                            onSaveNote={async (note: string) => {
-                              if (!simulationResult?.simulationId) return;
-                              await api.patch(`/simulations/${simulationResult.simulationId}/connection-note`, { connectionId: link.id, note });
-                            }}
-                          />
-                        ) : (
-                          <div style={{ marginTop: 8 }}>
-                            <button
-                              onClick={async () => {
-                                const currentState = await simulationsApi.current().catch(() => null);
-                                const active = [...new Set([
-                                  ...(currentState?.removedConnectionIds ?? []),
-                                  ...(simulationResult?.removedConnectionIds ?? []),
-                                ])];
-                                const res = await api.post('/simulations', { connectionIds: [...new Set([...active, link.id])] });
-                                if (res?.data) setSimulationResult(res.data);
-                                load();
-                              }}
-                              style={{ width: '100%', padding: '7px', background: '#ef4444', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-                            >
-                              ⚡ Simular Rompimento
-                            </button>
-                          </div>
-                        )}
+                        {/* Ações e nota — sempre mostra o painel de nó */}
+                        <ConnectionNotePanel
+                          link={link}
+                          simulationResult={simulationResult}
+                          failureState={failureState}
+                          onNormalize={async () => {
+                            const remaining = (simulationResult?.removedConnectionIds ?? []).filter(id => id !== link.id);
+                            await normalizeIds(remaining);
+                          }}
+                          onSaveNote={async (note: string) => {
+                            if (!simulationResult?.simulationId) return;
+                            await api.patch(`/simulations/${simulationResult.simulationId}/connection-note`, { connectionId: link.id, note });
+                          }}
+                        />
                       </div>
                     </Popup>
                   </Polyline>
@@ -677,165 +656,227 @@ const popInp: React.CSSProperties = {
   border: '1px solid #334155', borderRadius: 5, color: '#e2e8f0', fontSize: 12,
 };
 
-function StationPopup({ station, state, overheating, touchingTypes, simulationResult,
-  stationActiveFailures, stationAllFailures,
+function StationPopup({ station, state, overheating, stationActiveFailures, stationAllFailures,
   onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: any) {
-  const [view, setView] = useState<'main' | 'newFailure' | 'history' | 'addNote' | 'simFailure'>('main');
-  const [failureType, setFailureType] = useState('MANAGEMENT_FAILURE');
-  const [failureNote, setFailureNote] = useState('');
+
+  // Fluxo em etapas: main → selectType → writeNote → confirm → restoreConfirm
+  const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm'>('main');
+  const [selectedType, setSelectedType] = useState('');
+  const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [noteTarget, setNoteTarget] = useState<any>(null);
-  const [noteText, setNoteText] = useState('');
+  const [restoreTarget, setRestoreTarget] = useState<any>(null);
+  const [editNote, setEditNote] = useState('');
+  const [editTarget, setEditTarget] = useState<any>(null);
 
-  const muted: React.CSSProperties = { color: '#64748b', fontSize: 11 };
+  const s = { color: '#e2e8f0', fontSize: 12 };
+  const muted = { color: '#64748b', fontSize: 11 };
+  const TYPES_STATION = [
+    { value: 'MANAGEMENT_FAILURE',    label: 'Falha de gerência' },
+    { value: 'OVERHEATING',           label: 'Superaquecimento' },
+    { value: 'POWER_FAILURE',         label: 'Falta de energia' },
+    { value: 'EQUIPMENT_UNAVAILABLE', label: 'Indisponibilidade de equipamento' },
+  ];
 
-  async function registerFailure() {
+  async function applyFailure() {
     setSaving(true); setSaveError('');
     try {
       await api.post('/failures', {
-        type: failureType, targetType: 'STATION',
-        targetId: station.id, targetName: station.name,
-        severity: 'HIGH', note: failureNote || undefined,
+        type: selectedType, targetType: 'STATION',
+        targetId: station?.id, targetName: station?.name,
+        severity: 'HIGH', note: note || undefined,
       });
-      setView('main'); setFailureNote('');
+      setView('main'); setSelectedType(''); setNote('');
     } catch (e: any) {
-      setSaveError(e?.response?.data?.message ?? 'Erro ao registrar falha. Verifique se o backend está rodando.');
+      setSaveError(e?.response?.data?.message ?? 'Erro ao registrar — verifique o backend.');
     } finally { setSaving(false); }
   }
 
-  async function runSimFailure() {
-    setSaving(true); setSaveError('');
-    try {
-      if (failureType === 'OVERHEATING') onSimulateOverheat();
-      else await onSimulateFailure();
-      setView('main'); setFailureNote('');
-    } catch (e: any) {
-      setSaveError(e?.response?.data?.message ?? 'Erro ao simular falha.');
-    } finally { setSaving(false); }
+  async function confirmRestore() {
+    if (!restoreTarget) return;
+    try { await api.patch(`/failures/${restoreTarget.id}/restore`); }
+    catch {}
+    setView('main'); setRestoreTarget(null);
   }
 
-  async function restoreFailure(id: string) {
-    try { await api.patch(`/failures/${id}/restore`); }
-    catch { /* WebSocket atualizará quando chegar */ }
-  }
-
-  function openAddNote(failure: any) { setNoteTarget(failure); setNoteText(failure.note ?? ''); setView('addNote'); }
-
-  async function saveNote() {
-    if (!noteTarget) return;
+  async function saveEditNote() {
+    if (!editTarget) return;
     setSaving(true);
-    try {
-      await api.patch(`/failures/${noteTarget.id}/note`, { note: noteText });
-      setView('main');
-    } finally { setSaving(false); }
+    try { await api.patch(`/failures/${editTarget.id}/note`, { note: editNote }); setView('main'); }
+    finally { setSaving(false); }
   }
 
+  // ── Tela principal ──────────────────────────────────────────────────────
   if (view === 'main') return (
-    <div style={{ minWidth: 250 }}>
-      <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: 8, marginBottom: 8 }}>
-        <div style={{ fontWeight: 700, fontSize: 14, color: '#e2e8f0' }}>{station.name}</div>
-        <div style={muted}>{station.city} · {station.state}</div>
-        <div style={{ fontSize: 12, marginTop: 3 }}>{STATE_LABELS_MAP[state] ?? state}</div>
-        {overheating && <div style={{ fontSize: 11, color: '#f97316', marginTop: 2 }}>🔥 Superaquecimento</div>}
-        {station.isCore && <div style={{ fontSize: 10, color: '#3b82f6', marginTop: 2 }}>★ CORE</div>}
+    <div style={{ minWidth: 240 }}>
+      {/* Cabeçalho */}
+      <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #1e293b' }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0' }}>{station?.name}</div>
+        <div style={{ ...muted }}>{station?.city} · {station?.state}</div>
+        <div style={{ fontSize: 11, marginTop: 3 }}>
+          {STATE_LABELS_MAP[state] ?? state}
+          {overheating && '  🔥 Superaquecimento'}
+          {station?.isCore && '  ★ CORE'}
+        </div>
       </div>
 
-      {stationActiveFailures.length > 0 && (
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ ...muted, fontWeight: 600, marginBottom: 4 }}>FALHAS ATIVAS: {stationActiveFailures.length}</div>
+      {/* Falhas ativas nesta estação */}
+      {(stationActiveFailures ?? []).length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: '#ef4444', fontWeight: 700, marginBottom: 5, letterSpacing: '0.05em' }}>
+            ⚠ FALHAS ATIVAS ({stationActiveFailures.length})
+          </div>
           {stationActiveFailures.map((f: any) => (
-            <div key={f.id} style={{ background: '#1e293b', borderRadius: 5, padding: '5px 8px', marginBottom: 4 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 600 }}>
-                  {FAILURE_ICONS_MAP[f.type] ?? '⚠️'} {f.type.replace(/_/g, ' ')}
-                </span>
-                <div style={{ display: 'flex', gap: 3 }}>
-                  <button onClick={() => openAddNote(f)} style={{ ...popBtn('#334155'), flex: 'none', padding: '2px 6px' }}>📝</button>
-                  <button onClick={() => restoreFailure(f.id)} style={{ ...popBtn('#10b981'), flex: 'none', padding: '2px 6px' }}>✓</button>
+            <div key={f?.id} style={{ background: '#1e293b', borderRadius: 5, padding: '6px 8px', marginBottom: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 600 }}>
+                    {FAILURE_ICONS_MAP[f?.type] ?? '⚠️'} {(f?.type ?? '').replace(/_/g, ' ')}
+                  </span>
+                  <span style={{ marginLeft: 6, fontSize: 9, background: f?.status === 'ACKNOWLEDGED' ? '#92400e' : '#7f1d1d', color: '#fca5a5', borderRadius: 3, padding: '1px 4px' }}>
+                    {f?.status}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
+                  <button
+                    onClick={() => { setEditTarget(f); setEditNote(f?.note ?? ''); setView('main'); /* inline */ }}
+                    title="Editar nota"
+                    style={{ background: '#334155', border: 'none', borderRadius: 4, color: '#e2e8f0', fontSize: 10, padding: '2px 5px', cursor: 'pointer' }}
+                  >✏️</button>
+                  <button
+                    onClick={() => { setRestoreTarget(f); setView('restoreConfirm'); }}
+                    title="Restabelecer"
+                    style={{ background: '#065f46', border: 'none', borderRadius: 4, color: '#6ee7b7', fontSize: 10, padding: '2px 5px', cursor: 'pointer' }}
+                  >✓ Restabelecer</button>
                 </div>
               </div>
-              {f.note && <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic', marginTop: 2 }}>"{f.note}"</div>}
-              <div style={{ ...muted, marginTop: 1 }}>{new Date(f.createdAt).toLocaleString('pt-BR')}</div>
+              {f?.note && <div style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginTop: 3 }}>"{f.note}"</div>}
+              {/* Edição inline de nota */}
+              {editTarget?.id === f?.id && (
+                <div style={{ marginTop: 6 }}>
+                  <textarea value={editNote} onChange={e => setEditNote(e.target.value)} rows={2}
+                    style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 4, color: '#e2e8f0', fontSize: 11, padding: '4px 6px', resize: 'none' }} />
+                  <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                    <button onClick={() => setEditTarget(null)} style={{ flex: 1, padding: '4px', background: '#334155', border: 'none', borderRadius: 4, color: '#e2e8f0', fontSize: 10, cursor: 'pointer' }}>Cancelar</button>
+                    <button onClick={saveEditNote} disabled={saving} style={{ flex: 1, padding: '4px', background: '#3b82f6', border: 'none', borderRadius: 4, color: 'white', fontSize: 10, cursor: 'pointer' }}>
+                      {saving ? '...' : '💾 Salvar'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 5 }}>
-        <button onClick={() => { setView('newFailure'); }} style={popBtn('#ef4444')}>+ Registrar Falha</button>
-        <button onClick={() => { setView('simFailure'); }} style={popBtn('#475569')}>⚡ Simular</button>
-      </div>
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-        <button onClick={() => setView('history')} style={popBtn('#334155')}>📋 Histórico</button>
-        {state !== 'NORMAL' && <button onClick={onNormalizeStation} style={popBtn('#10b981')}>✓ Normalizar</button>}
-        {overheating && <button onClick={onNormalizeOverheat} style={popBtn('#f97316')}>🧊</button>}
+      {/* Ações principais */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <button
+          onClick={() => { setSelectedType(''); setNote(''); setSaveError(''); setView('selectType'); }}
+          style={{ width: '100%', padding: '8px', background: '#dc2626', border: 'none', borderRadius: 6, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+        >
+          ⚡ SIMULAR FALHA
+        </button>
+        {state !== 'NORMAL' && (
+          <button onClick={onNormalizeStation}
+            style={{ width: '100%', padding: '6px', background: '#065f46', border: 'none', borderRadius: 6, color: '#6ee7b7', fontWeight: 600, fontSize: 11, cursor: 'pointer' }}>
+            ✓ Normalizar Simulação
+          </button>
+        )}
       </div>
     </div>
   );
 
-  if (view === 'newFailure' || view === 'simFailure') return (
-    <div style={{ minWidth: 250 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>
-        {view === 'newFailure' ? '+ Registrar Falha' : '⚡ Simular Falha'}
-      </div>
-      <div style={{ ...muted, marginBottom: 8 }}>Estação: {station.name}</div>
-      <div style={{ marginBottom: 8 }}>
-        {FAILURE_TYPES_STATION.map(t => (
-          <label key={t.value} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, cursor: 'pointer' }}>
-            <input type="radio" name="ftype" checked={failureType === t.value} onChange={() => setFailureType(t.value)} />
+  // ── Etapa 1: Selecionar tipo de falha ──────────────────────────────────
+  if (view === 'selectType') return (
+    <div style={{ minWidth: 240 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>SIMULAR FALHA</div>
+      <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12 }}>Estação: {station?.name}</div>
+      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>Selecione o tipo de falha:</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+        {TYPES_STATION.map(t => (
+          <label key={t.value} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+            background: selectedType === t.value ? '#1e3a5f' : '#1e293b',
+            border: `1px solid ${selectedType === t.value ? '#3b82f6' : '#334155'}`,
+            borderRadius: 6, padding: '8px 10px', transition: 'all 0.1s' }}>
+            <input type="radio" name="failType" value={t.value}
+              checked={selectedType === t.value}
+              onChange={() => setSelectedType(t.value)}
+              style={{ accentColor: '#3b82f6', width: 14, height: 14 }} />
             <span style={{ fontSize: 12, color: '#e2e8f0' }}>{t.label}</span>
           </label>
         ))}
       </div>
-      <textarea value={failureNote} onChange={e => setFailureNote(e.target.value)}
-        placeholder="Nota / observação (opcional)..." rows={3}
-        style={{ ...popInp, resize: 'vertical', marginBottom: 8 }} />
-      {saveError && <div style={{ color: '#ef4444', fontSize: 11, marginBottom: 6 }}>{saveError}</div>}
-      <div style={{ display: 'flex', gap: 5 }}>
-        <button onClick={() => setView('main')} style={popBtn('#334155')}>Cancelar</button>
-        <button onClick={view === 'newFailure' ? registerFailure : runSimFailure} disabled={saving}
-          style={popBtn(view === 'newFailure' ? '#ef4444' : '#475569')}>
-          {saving ? '...' : view === 'newFailure' ? 'Registrar' : 'Simular'}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => setView('main')}
+          style={{ flex: 1, padding: '8px', background: '#334155', border: 'none', borderRadius: 6, color: '#e2e8f0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+          Cancelar
+        </button>
+        <button onClick={() => { setNote(''); setView('writeNote'); }}
+          disabled={!selectedType}
+          style={{ flex: 1, padding: '8px', background: selectedType ? '#2563eb' : '#1e3a5f', border: 'none', borderRadius: 6,
+            color: selectedType ? 'white' : '#475569', fontWeight: 700, fontSize: 12,
+            cursor: selectedType ? 'pointer' : 'not-allowed', transition: 'all 0.15s' }}>
+          Aplicar →
         </button>
       </div>
     </div>
   );
 
-  if (view === 'addNote') return (
-    <div style={{ minWidth: 250 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 6 }}>📝 Editar Nota</div>
-      <textarea value={noteText} onChange={e => setNoteText(e.target.value)} rows={4}
-        placeholder="Atualize a nota operacional..." style={{ ...popInp, resize: 'vertical', marginBottom: 8 }} />
-      <div style={{ display: 'flex', gap: 5 }}>
-        <button onClick={() => setView('main')} style={popBtn('#334155')}>Cancelar</button>
-        <button onClick={saveNote} disabled={saving} style={popBtn('#3b82f6')}>{saving ? '...' : '💾 Salvar'}</button>
+  // ── Etapa 2: Escrever nota ─────────────────────────────────────────────
+  if (view === 'writeNote') return (
+    <div style={{ minWidth: 240 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>NOTA / OBSERVAÇÃO</div>
+      <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>
+        {FAILURE_ICONS_MAP[selectedType]} {selectedType.replace(/_/g, ' ')} · {station?.name}
+      </div>
+      <textarea
+        value={note} onChange={e => setNote(e.target.value)}
+        placeholder='Ex: "Equipe em campo verificando equipamento."'
+        rows={4} autoFocus
+        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 6,
+          color: '#e2e8f0', fontSize: 12, padding: '8px 10px', resize: 'vertical', marginBottom: 10,
+          fontFamily: 'sans-serif' }}
+      />
+      {saveError && <div style={{ color: '#ef4444', fontSize: 11, marginBottom: 8 }}>{saveError}</div>}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => setView('selectType')}
+          style={{ flex: 1, padding: '8px', background: '#334155', border: 'none', borderRadius: 6, color: '#e2e8f0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+          ← Voltar
+        </button>
+        <button onClick={applyFailure} disabled={saving}
+          style={{ flex: 1, padding: '8px', background: '#dc2626', border: 'none', borderRadius: 6, color: 'white', fontWeight: 700, fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer' }}>
+          {saving ? 'Aplicando...' : '✓ Confirmar'}
+        </button>
       </div>
     </div>
   );
 
-  if (view === 'history') return (
-    <div style={{ minWidth: 250 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 8 }}>📋 {station.name}</div>
-      {stationAllFailures.length === 0 && <div style={muted}>Nenhuma ocorrência.</div>}
-      {stationAllFailures.map((f: any) => (
-        <div key={f.id} style={{ borderBottom: '1px solid #1e293b', paddingBottom: 6, marginBottom: 6 }}>
-          <div style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 600 }}>
-            {FAILURE_ICONS_MAP[f.type] ?? '⚠️'} {f.type.replace(/_/g, ' ')}
-            <span style={{ marginLeft: 5, fontSize: 10, color: f.status === 'RESTORED' ? '#10b981' : '#ef4444' }}>{f.status}</span>
-          </div>
-          <div style={muted}>{new Date(f.createdAt).toLocaleString('pt-BR')}</div>
-          {f.restoredAt && <div style={muted}>✓ {new Date(f.restoredAt).toLocaleString('pt-BR')}</div>}
-          {f.note && <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>"{f.note}"</div>}
-        </div>
-      ))}
-      <button onClick={() => setView('main')} style={{ ...popBtn('#334155'), flex: 'none' }}>← Voltar</button>
+  // ── Confirmação de restabelecimento ────────────────────────────────────
+  if (view === 'restoreConfirm') return (
+    <div style={{ minWidth: 240 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 8 }}>Restabelecer esta falha simulada?</div>
+      <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>
+        {FAILURE_ICONS_MAP[restoreTarget?.type]} {(restoreTarget?.type ?? '').replace(/_/g, ' ')}
+      </div>
+      <div style={{ fontSize: 11, color: '#64748b', marginBottom: 14 }}>{station?.name}</div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => { setView('main'); setRestoreTarget(null); }}
+          style={{ flex: 1, padding: '8px', background: '#334155', border: 'none', borderRadius: 6, color: '#e2e8f0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+          Cancelar
+        </button>
+        <button onClick={confirmRestore}
+          style={{ flex: 1, padding: '8px', background: '#065f46', border: 'none', borderRadius: 6, color: '#6ee7b7', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+          ✓ Restabelecer
+        </button>
+      </div>
     </div>
   );
 
   return null;
 }
 
+// DynamicMarker atualiza o ícone imperativamente via ref — assim o Leaflet
 // DynamicMarker atualiza o ícone imperativamente via ref — assim o Leaflet
 // chama setIcon() diretamente no marker sem desmontar o componente nem fechar
 // o Popup que estiver aberto.
@@ -888,59 +929,185 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
   );
 }
 
-// Painel de nota + normalizar dentro do popup de uma conexão rompida.
-// Usa estado local para evitar re-renders do mapa inteiro ao digitar.
-function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote }: {
+// Popup de conexão/nó — fluxo: info → simular falha → tipo → nota → confirmar → restabelecer
+function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, failureState }: {
   link: any;
   simulationResult: SimulationResult | null;
   onNormalize: () => Promise<void>;
   onSaveNote: (note: string) => Promise<void>;
+  failureState: FailureImpactState | null;
 }) {
-  const savedNote = simulationResult?.connectionNotes?.[link.id] ?? '';
-  const [note, setNote] = useState(savedNote);
+  const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm'>('main');
+  const [selectedType, setSelectedType] = useState('');
+  const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
-  // Sincroniza a nota local sempre que o simulationResult atualizar
-  // (WebSocket de outro usuário, ou carregamento inicial da página)
-  useEffect(() => {
-    setNote(simulationResult?.connectionNotes?.[link.id] ?? '');
-  }, [simulationResult?.connectionNotes, link.id]);
+  // Nota da simulação manual (ConnectionNote)
+  const simNote = simulationResult?.connectionNotes?.[link.id] ?? '';
+  const [editSimNote, setEditSimNote] = useState(simNote);
+  useEffect(() => { setEditSimNote(simulationResult?.connectionNotes?.[link.id] ?? ''); }, [simulationResult?.connectionNotes, link.id]);
 
-  async function handleSave() {
-    setSaving(true);
-    await onSaveNote(note);
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  // Falha operacional ativa neste nó
+  const nodeFailure = (failureState?.failures ?? []).find(
+    (f: any) => f.targetId === link.id && f.status !== 'RESTORED'
+  );
+
+  const TYPES_NODE = [
+    { value: 'NODE_RUPTURE',     label: 'Rompimento' },
+    { value: 'NODE_ATTENUATION', label: 'Atenuação' },
+  ];
+
+  async function applyNodeFailure() {
+    setSaving(true); setSaveError('');
+    try {
+      await api.post('/failures', {
+        type: selectedType, targetType: 'CONNECTION',
+        targetId: link.id, targetName: link.name,
+        severity: 'HIGH', note: note || undefined,
+      });
+      setView('main'); setSelectedType(''); setNote('');
+    } catch (e: any) {
+      setSaveError(e?.response?.data?.message ?? 'Erro ao registrar falha.');
+    } finally { setSaving(false); }
   }
 
-  return (
-    <div style={{ marginTop: 10, borderTop: '1px solid #1e293b', paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <textarea
-        value={note}
-        onChange={(e) => { setNote(e.target.value); setSaved(false); }}
-        placeholder="Anotação: equipe acionada, previsão de retorno..."
-        rows={2}
-        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 6, color: '#e2e8f0', fontSize: 11, padding: '5px 8px', resize: 'vertical', fontFamily: 'sans-serif' }}
-      />
-      <div style={{ display: 'flex', gap: 6 }}>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{ flex: 1, padding: '6px', background: saved ? '#10b981' : '#3b82f6', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 11, cursor: 'pointer' }}
-        >
-          {saving ? 'Salvando...' : saved ? '✓ Salvo' : '📝 Salvar nota'}
+  async function restoreNodeFailure() {
+    if (!nodeFailure) return;
+    try { await api.patch(`/failures/${nodeFailure.id}/restore`); }
+    catch {}
+    setView('main');
+  }
+
+  async function saveSimNote() {
+    setSaving(true);
+    await onSaveNote(editSimNote);
+    setSaving(false);
+  }
+
+  // ── Tela principal ──
+  if (view === 'main') return (
+    <div style={{ minWidth: 200, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* Falha operacional ativa */}
+      {nodeFailure && (
+        <div style={{ background: '#1e293b', borderRadius: 5, padding: '6px 8px', marginBottom: 2 }}>
+          <div style={{ fontSize: 11, color: '#fca5a5', fontWeight: 700 }}>
+            {FAILURE_ICONS_MAP[nodeFailure.type] ?? '⚠️'} {(nodeFailure.type ?? '').replace(/_/g, ' ')}
+            <span style={{ marginLeft: 5, fontSize: 9, color: '#64748b' }}>{nodeFailure.status}</span>
+          </div>
+          {nodeFailure.note && <div style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginTop: 2 }}>"{nodeFailure.note}"</div>}
+          <button onClick={() => setView('restoreConfirm')}
+            style={{ marginTop: 5, width: '100%', padding: '4px', background: '#065f46', border: 'none', borderRadius: 4, color: '#6ee7b7', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
+            ✓ Restabelecer
+          </button>
+        </div>
+      )}
+
+      {/* Nota da simulação manual */}
+      <textarea value={editSimNote} onChange={e => setEditSimNote(e.target.value)} rows={2}
+        placeholder="Nota de simulação: equipe acionada..."
+        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 5, color: '#e2e8f0', fontSize: 11, padding: '5px 8px', resize: 'vertical' }} />
+      <button onClick={saveSimNote} disabled={saving}
+        style={{ padding: '5px', background: '#3b82f6', border: 'none', borderRadius: 5, color: 'white', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+        {saving ? '...' : '💾 Salvar Nota'}
+      </button>
+
+      {/* Simular falha */}
+      {!nodeFailure && (
+        <button onClick={() => { setSelectedType(''); setNote(''); setSaveError(''); setView('selectType'); }}
+          style={{ padding: '7px', background: '#dc2626', border: 'none', borderRadius: 5, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+          ⚡ SIMULAR FALHA
         </button>
-        <button
-          onClick={onNormalize}
-          style={{ flex: 1, padding: '6px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 11, cursor: 'pointer' }}
-        >
-          ✓ Normalizar
+      )}
+
+      {/* Normalizar simulação manual */}
+      <button onClick={onNormalize}
+        style={{ padding: '5px', background: '#065f46', border: 'none', borderRadius: 5, color: '#6ee7b7', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+        ✓ Normalizar Simulação
+      </button>
+    </div>
+  );
+
+  // ── Selecionar tipo ──
+  if (view === 'selectType') return (
+    <div style={{ minWidth: 200 }}>
+      <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', marginBottom: 2 }}>SIMULAR FALHA</div>
+      <div style={{ fontSize: 10, color: '#64748b', marginBottom: 10 }}>Nó: {link.name}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 }}>
+        {TYPES_NODE.map(t => (
+          <label key={t.value} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            background: selectedType === t.value ? '#1e3a5f' : '#1e293b',
+            border: `1px solid ${selectedType === t.value ? '#3b82f6' : '#334155'}`,
+            borderRadius: 5, padding: '7px 9px' }}>
+            <input type="radio" name="nodeFailType" value={t.value}
+              checked={selectedType === t.value}
+              onChange={() => setSelectedType(t.value)}
+              style={{ accentColor: '#3b82f6', width: 13, height: 13 }} />
+            <span style={{ fontSize: 12, color: '#e2e8f0' }}>{t.label}</span>
+          </label>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 7 }}>
+        <button onClick={() => setView('main')}
+          style={{ flex: 1, padding: '7px', background: '#334155', border: 'none', borderRadius: 5, color: '#e2e8f0', fontSize: 11, cursor: 'pointer' }}>
+          Cancelar
+        </button>
+        <button onClick={() => { setNote(''); setView('writeNote'); }} disabled={!selectedType}
+          style={{ flex: 1, padding: '7px', background: selectedType ? '#2563eb' : '#1e3a5f', border: 'none', borderRadius: 5,
+            color: selectedType ? 'white' : '#475569', fontWeight: 700, fontSize: 11,
+            cursor: selectedType ? 'pointer' : 'not-allowed' }}>
+          Aplicar →
         </button>
       </div>
     </div>
   );
+
+  // ── Escrever nota ──
+  if (view === 'writeNote') return (
+    <div style={{ minWidth: 200 }}>
+      <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', marginBottom: 2 }}>NOTA / OBSERVAÇÃO</div>
+      <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8 }}>
+        {selectedType.replace(/_/g, ' ')} · {link.name}
+      </div>
+      <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} autoFocus
+        placeholder='"Equipe em campo verificando equipamento."'
+        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 5,
+          color: '#e2e8f0', fontSize: 12, padding: '7px 9px', resize: 'vertical', marginBottom: 8 }} />
+      {saveError && <div style={{ color: '#ef4444', fontSize: 10, marginBottom: 6 }}>{saveError}</div>}
+      <div style={{ display: 'flex', gap: 7 }}>
+        <button onClick={() => setView('selectType')}
+          style={{ flex: 1, padding: '7px', background: '#334155', border: 'none', borderRadius: 5, color: '#e2e8f0', fontSize: 11, cursor: 'pointer' }}>
+          ← Voltar
+        </button>
+        <button onClick={applyNodeFailure} disabled={saving}
+          style={{ flex: 1, padding: '7px', background: '#dc2626', border: 'none', borderRadius: 5, color: 'white', fontWeight: 700, fontSize: 11, cursor: saving ? 'not-allowed' : 'pointer' }}>
+          {saving ? '...' : '✓ Confirmar'}
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Confirmação restabelecimento ──
+  if (view === 'restoreConfirm') return (
+    <div style={{ minWidth: 200 }}>
+      <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', marginBottom: 6 }}>Restabelecer esta falha simulada?</div>
+      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 12 }}>
+        {(nodeFailure?.type ?? '').replace(/_/g, ' ')} · {link.name}
+      </div>
+      <div style={{ display: 'flex', gap: 7 }}>
+        <button onClick={() => setView('main')}
+          style={{ flex: 1, padding: '7px', background: '#334155', border: 'none', borderRadius: 5, color: '#e2e8f0', fontSize: 11, cursor: 'pointer' }}>
+          Cancelar
+        </button>
+        <button onClick={restoreNodeFailure}
+          style={{ flex: 1, padding: '7px', background: '#065f46', border: 'none', borderRadius: 5, color: '#6ee7b7', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+          ✓ Restabelecer
+        </button>
+      </div>
+    </div>
+  );
+
+  return null;
 }
 
 function Legend({ color, label }: { color: string; label: string }) {
