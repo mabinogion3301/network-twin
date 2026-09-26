@@ -1,4 +1,4 @@
-# Build
+# Build — cache bust: 2026-09-26
 FROM node:20-alpine AS build
 RUN apk add --no-cache openssl
 WORKDIR /app
