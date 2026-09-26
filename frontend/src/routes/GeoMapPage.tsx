@@ -642,6 +642,7 @@ export function GeoMapPage() {
                   onNormalizeOverheat={() => {
                     setLocalOverheatIds(prev => { const s = new Set(prev); s.delete(station.id); return s; });
                   }}
+                  failureState={failureState}
                 />
               );
             })}
@@ -651,18 +652,198 @@ export function GeoMapPage() {
   );
 }
 
+// ─── Popup operacional completo da estação ────────────────────────────────────
+
+const FAILURE_TYPES_STATION = [
+  { value: 'MANAGEMENT_FAILURE',    label: '🚫 Falha de Gerência' },
+  { value: 'OVERHEATING',           label: '🔥 Superaquecimento' },
+  { value: 'POWER_FAILURE',         label: '⚡ Falta de Energia' },
+  { value: 'EQUIPMENT_UNAVAILABLE', label: '🔧 Indisponibilidade de Equipamento' },
+];
+const FAILURE_ICONS_MAP: Record<string, string> = {
+  MANAGEMENT_FAILURE: '🚫', OVERHEATING: '🔥', POWER_FAILURE: '⚡',
+  EQUIPMENT_UNAVAILABLE: '🔧', NODE_RUPTURE: '💥', NODE_ATTENUATION: '📉',
+};
+const STATE_LABELS_MAP: Record<string, string> = {
+  ISOLATED: '🔴 ISOLADA', DEGRADING: '🟡 DEGRADANDO',
+  IMPACTED: '🟣 IMPACTADA', NORMAL: '🟢 NORMAL',
+};
+const popBtn = (color: string): React.CSSProperties => ({
+  padding: '5px 10px', background: color, border: 'none', borderRadius: 5,
+  color: 'white', fontWeight: 600, fontSize: 11, cursor: 'pointer', flex: 1,
+});
+const popInp: React.CSSProperties = {
+  width: '100%', padding: '6px 8px', background: '#0f172a',
+  border: '1px solid #334155', borderRadius: 5, color: '#e2e8f0', fontSize: 12,
+};
+
+function StationPopup({ station, state, overheating, touchingTypes, simulationResult,
+  stationActiveFailures, stationAllFailures,
+  onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: any) {
+  const [view, setView] = useState<'main' | 'newFailure' | 'history' | 'addNote' | 'simFailure'>('main');
+  const [failureType, setFailureType] = useState('MANAGEMENT_FAILURE');
+  const [failureNote, setFailureNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [noteTarget, setNoteTarget] = useState<any>(null);
+  const [noteText, setNoteText] = useState('');
+
+  const muted: React.CSSProperties = { color: '#64748b', fontSize: 11 };
+
+  async function registerFailure() {
+    setSaving(true);
+    try {
+      await api.post('/failures', {
+        type: failureType, targetType: 'STATION',
+        targetId: station.id, targetName: station.name,
+        severity: 'HIGH', note: failureNote || undefined,
+      });
+      setView('main'); setFailureNote('');
+    } finally { setSaving(false); }
+  }
+
+  async function runSimFailure() {
+    setSaving(true);
+    try {
+      if (failureType === 'OVERHEATING') onSimulateOverheat();
+      else await onSimulateFailure();
+      setView('main'); setFailureNote('');
+    } finally { setSaving(false); }
+  }
+
+  async function restoreFailure(id: string) { await api.patch(`/failures/${id}/restore`); }
+
+  function openAddNote(failure: any) { setNoteTarget(failure); setNoteText(failure.note ?? ''); setView('addNote'); }
+
+  async function saveNote() {
+    if (!noteTarget) return;
+    setSaving(true);
+    await api.patch(`/failures/${noteTarget.id}/note`, { note: noteText });
+    setSaving(false); setView('main');
+  }
+
+  if (view === 'main') return (
+    <div style={{ minWidth: 250 }}>
+      <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: 8, marginBottom: 8 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: '#e2e8f0' }}>{station.name}</div>
+        <div style={muted}>{station.city} · {station.state}</div>
+        <div style={{ fontSize: 12, marginTop: 3 }}>{STATE_LABELS_MAP[state] ?? state}</div>
+        {overheating && <div style={{ fontSize: 11, color: '#f97316', marginTop: 2 }}>🔥 Superaquecimento</div>}
+        {station.isCore && <div style={{ fontSize: 10, color: '#3b82f6', marginTop: 2 }}>★ CORE</div>}
+      </div>
+
+      {stationActiveFailures.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ ...muted, fontWeight: 600, marginBottom: 4 }}>FALHAS ATIVAS: {stationActiveFailures.length}</div>
+          {stationActiveFailures.map((f: any) => (
+            <div key={f.id} style={{ background: '#1e293b', borderRadius: 5, padding: '5px 8px', marginBottom: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 600 }}>
+                  {FAILURE_ICONS_MAP[f.type] ?? '⚠️'} {f.type.replace(/_/g, ' ')}
+                </span>
+                <div style={{ display: 'flex', gap: 3 }}>
+                  <button onClick={() => openAddNote(f)} style={{ ...popBtn('#334155'), flex: 'none', padding: '2px 6px' }}>📝</button>
+                  <button onClick={() => restoreFailure(f.id)} style={{ ...popBtn('#10b981'), flex: 'none', padding: '2px 6px' }}>✓</button>
+                </div>
+              </div>
+              {f.note && <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic', marginTop: 2 }}>"{f.note}"</div>}
+              <div style={{ ...muted, marginTop: 1 }}>{new Date(f.createdAt).toLocaleString('pt-BR')}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 5 }}>
+        <button onClick={() => { setView('newFailure'); }} style={popBtn('#ef4444')}>+ Registrar Falha</button>
+        <button onClick={() => { setView('simFailure'); }} style={popBtn('#475569')}>⚡ Simular</button>
+      </div>
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+        <button onClick={() => setView('history')} style={popBtn('#334155')}>📋 Histórico</button>
+        {state !== 'NORMAL' && <button onClick={onNormalizeStation} style={popBtn('#10b981')}>✓ Normalizar</button>}
+        {overheating && <button onClick={onNormalizeOverheat} style={popBtn('#f97316')}>🧊</button>}
+      </div>
+    </div>
+  );
+
+  if (view === 'newFailure' || view === 'simFailure') return (
+    <div style={{ minWidth: 250 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>
+        {view === 'newFailure' ? '+ Registrar Falha' : '⚡ Simular Falha'}
+      </div>
+      <div style={{ ...muted, marginBottom: 8 }}>Estação: {station.name}</div>
+      <div style={{ marginBottom: 8 }}>
+        {FAILURE_TYPES_STATION.map(t => (
+          <label key={t.value} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, cursor: 'pointer' }}>
+            <input type="radio" name="ftype" checked={failureType === t.value} onChange={() => setFailureType(t.value)} />
+            <span style={{ fontSize: 12, color: '#e2e8f0' }}>{t.label}</span>
+          </label>
+        ))}
+      </div>
+      <textarea value={failureNote} onChange={e => setFailureNote(e.target.value)}
+        placeholder="Nota / observação (opcional)..." rows={3}
+        style={{ ...popInp, resize: 'vertical', marginBottom: 8 }} />
+      <div style={{ display: 'flex', gap: 5 }}>
+        <button onClick={() => setView('main')} style={popBtn('#334155')}>Cancelar</button>
+        <button onClick={view === 'newFailure' ? registerFailure : runSimFailure} disabled={saving}
+          style={popBtn(view === 'newFailure' ? '#ef4444' : '#475569')}>
+          {saving ? '...' : view === 'newFailure' ? 'Registrar' : 'Simular'}
+        </button>
+      </div>
+    </div>
+  );
+
+  if (view === 'addNote') return (
+    <div style={{ minWidth: 250 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 6 }}>📝 Editar Nota</div>
+      <textarea value={noteText} onChange={e => setNoteText(e.target.value)} rows={4}
+        placeholder="Atualize a nota operacional..." style={{ ...popInp, resize: 'vertical', marginBottom: 8 }} />
+      <div style={{ display: 'flex', gap: 5 }}>
+        <button onClick={() => setView('main')} style={popBtn('#334155')}>Cancelar</button>
+        <button onClick={saveNote} disabled={saving} style={popBtn('#3b82f6')}>{saving ? '...' : '💾 Salvar'}</button>
+      </div>
+    </div>
+  );
+
+  if (view === 'history') return (
+    <div style={{ minWidth: 250 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 8 }}>📋 {station.name}</div>
+      {stationAllFailures.length === 0 && <div style={muted}>Nenhuma ocorrência.</div>}
+      {stationAllFailures.map((f: any) => (
+        <div key={f.id} style={{ borderBottom: '1px solid #1e293b', paddingBottom: 6, marginBottom: 6 }}>
+          <div style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 600 }}>
+            {FAILURE_ICONS_MAP[f.type] ?? '⚠️'} {f.type.replace(/_/g, ' ')}
+            <span style={{ marginLeft: 5, fontSize: 10, color: f.status === 'RESTORED' ? '#10b981' : '#ef4444' }}>{f.status}</span>
+          </div>
+          <div style={muted}>{new Date(f.createdAt).toLocaleString('pt-BR')}</div>
+          {f.restoredAt && <div style={muted}>✓ {new Date(f.restoredAt).toLocaleString('pt-BR')}</div>}
+          {f.note && <div style={{ fontSize: 11, color: '#94a3b8', fontStyle: 'italic' }}>"{f.note}"</div>}
+        </div>
+      ))}
+      <button onClick={() => setView('main')} style={{ ...popBtn('#334155'), flex: 'none' }}>← Voltar</button>
+    </div>
+  );
+
+  return null;
+}
+
 // DynamicMarker atualiza o ícone imperativamente via ref — assim o Leaflet
 // chama setIcon() diretamente no marker sem desmontar o componente nem fechar
 // o Popup que estiver aberto.
 function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName,
   touchingTypes, state, overheating, failureBadges, station, simulationResult,
-  onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: any) {  const markerRef = useRef<any>(null);
+  onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat,
+  failureState }: any) {
+  const markerRef = useRef<any>(null);
 
   useEffect(() => {
-    if (markerRef.current) {
-      markerRef.current.setIcon(icon);
-    }
+    if (markerRef.current) markerRef.current.setIcon(icon);
   }, [icon]);
+
+  const stationActiveFailures = (failureState?.failures ?? []).filter(
+    (f: any) => f.targetId === station.id && f.status !== 'RESTORED',
+  );
+  const stationAllFailures = (failureState?.failures ?? []).filter(
+    (f: any) => f.targetId === station.id,
+  );
 
   return (
     <Marker
@@ -670,61 +851,22 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
       position={position}
       icon={icon}
       draggable={draggable}
-      eventHandlers={{
-        dragend: (e: any) => {
-          const { lat, lng } = e.target.getLatLng();
-          onDragEnd(lat, lng);
-        },
-      }}
+      eventHandlers={{ dragend: (e: any) => { const { lat, lng } = e.target.getLatLng(); onDragEnd(lat, lng); } }}
     >
       {zoom >= LABEL_VISIBLE_ZOOM && (
         <Tooltip permanent direction="top" offset={[0, -20]} opacity={0.95} className="station-name-tooltip">
           {stationName}
         </Tooltip>
       )}
-      <Popup>
-        <strong>{station.name}</strong>
-        <br />
-        {station.city} - {station.state}
-        <br />
-        Status:{' '}
-        {state === 'ISOLATED'
-          ? 'ISOLADA — sem caminho para nenhum CORE'
-          : state === 'DEGRADING'
-            ? 'DEGRADANDO — perdeu redundância'
-            : state === 'IMPACTED'
-              ? 'IMPACTADA — na zona de falha, mas gerenciada'
-              : station.status}
-
-        {station.trechos && station.trechos.length > 0 && (
-          <>
-            <br />
-            <strong style={{ fontSize: 12 }}>Trechos:</strong>{' '}
-            <span style={{ fontSize: 12, color: '#a78bfa' }}>{station.trechos.join(', ')}</span>
-          </>
-        )}
-
-        {touchingTypes.length > 0 && (
-          <>
-            <br />
-            <strong style={{ fontSize: 12 }}>Conexões desta estação:</strong>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
-              {touchingTypes.map((t: any) => (
-                <span key={t.label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-                  <span style={{ width: 16, height: 0, borderTop: `2px ${t.dashed ? 'dashed' : 'solid'} ${t.color}`, display: 'inline-block' }} />
-                  {t.label}
-                </span>
-              ))}
-            </div>
-          </>
-        )}
-
-        <br />
-        <StationActionPanel
+      <Popup minWidth={280} maxWidth={340}>
+        <StationPopup
           station={station}
           state={state}
           overheating={overheating}
+          touchingTypes={touchingTypes}
           simulationResult={simulationResult}
+          stationActiveFailures={stationActiveFailures}
+          stationAllFailures={stationAllFailures}
           onNormalizeStation={onNormalizeStation}
           onSimulateFailure={onSimulateFailure}
           onSimulateOverheat={onSimulateOverheat}
@@ -732,71 +874,6 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
         />
       </Popup>
     </Marker>
-  );
-}
-
-// Painel de ações no popup da estação: simular falha ou normalizar + nota
-function StationActionPanel({ station, state, overheating, simulationResult, onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat }: {
-  station: GeoStation;
-  state: StationVisualState;
-  overheating: boolean;
-  simulationResult: SimulationResult | null;
-  onNormalizeStation: () => void;
-  onSimulateFailure: () => Promise<void>;
-  onSimulateOverheat: () => Promise<void>;
-  onNormalizeOverheat: () => Promise<void>;
-}) {
-  const [simulating, setSimulating] = useState(false);
-  const [error, setError] = useState('');
-
-  async function handleSimulate() {
-    setSimulating(true); setError('');
-    try { await onSimulateFailure(); }
-    catch (e: any) { setError(e?.response?.data?.message ?? 'Erro ao simular'); }
-    finally { setSimulating(false); }
-  }
-
-  function handleOverheat() { onSimulateOverheat(); }
-
-  if (state === 'NORMAL' && !overheating) {
-    return (
-      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <button onClick={handleSimulate} disabled={simulating}
-          style={{ width: '100%', padding: '7px', background: '#ef4444', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: simulating ? 0.7 : 1 }}>
-          {simulating ? 'Simulando...' : '⚡ Simular Perda de Gerência'}
-        </button>
-        <button onClick={handleOverheat}
-          style={{ width: '100%', padding: '7px', background: '#f97316', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-          🔥 Simular Superaquecimento
-        </button>
-        {station.isCore && <div style={{ fontSize: 10, color: '#3b82f6', textAlign: 'center' }}>★ Ponto de Gerência (CORE)</div>}
-        {error && <div style={{ color: '#ef4444', fontSize: 11 }}>{error}</div>}
-        <em style={{ display: 'block', fontSize: 10, color: '#64748b', textAlign: 'center' }}>Arraste para reposicionar.</em>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {overheating && (
-        <button onClick={onNormalizeOverheat}
-          style={{ width: '100%', padding: '7px', background: '#f97316', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-          🧊 Normalizar Superaquecimento
-        </button>
-      )}
-      {!overheating && (
-        <button onClick={handleOverheat}
-          style={{ width: '100%', padding: '7px', background: '#f97316', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-          🔥 Simular Superaquecimento
-        </button>
-      )}
-      {state !== 'NORMAL' && (
-        <button onClick={onNormalizeStation}
-          style={{ width: '100%', padding: '7px', background: '#10b981', border: 'none', borderRadius: 6, color: 'white', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-          ✓ Normalizar Estação
-        </button>
-      )}
-    </div>
   );
 }
 
