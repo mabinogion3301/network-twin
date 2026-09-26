@@ -651,6 +651,15 @@ export function GeoMapPage() {
   );
 }
 
+// Converte qualquer erro de API em string segura para renderizar no JSX.
+function toErrorStr(e: any): string {
+  const msg = e?.response?.data?.message;
+  if (!msg) return e?.message ?? 'Erro desconhecido';
+  if (Array.isArray(msg)) return msg.join(' · ');
+  if (typeof msg === 'string') return msg;
+  return JSON.stringify(msg);
+}
+
 // ─── Popup operacional completo da estação ────────────────────────────────────
 
 const FAILURE_TYPES_STATION = [
@@ -708,7 +717,7 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
       });
       setView('main'); setSelectedType(''); setNote('');
     } catch (e: any) {
-      setSaveError(e?.response?.data?.message ?? 'Erro ao registrar — verifique o backend.');
+      setSaveError(toErrorStr(e) || 'Erro ao registrar — verifique o backend.');
     } finally { setSaving(false); }
   }
 
@@ -988,7 +997,7 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, 
       });
       setView('main'); setSelectedType(''); setNote('');
     } catch (e: any) {
-      setSaveError(e?.response?.data?.message ?? 'Erro ao registrar falha.');
+      setSaveError(toErrorStr(e));
     } finally { setSaving(false); }
   }
 
