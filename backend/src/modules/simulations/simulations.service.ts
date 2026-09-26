@@ -46,7 +46,7 @@ export class SimulationsService {
       }))
       .filter((c) => c.stationAId && c.stationBId && c.stationAId !== c.stationBId);
 
-    console.log(`[Impact] ${allStations.length} estações, ${stationConnections.length} conexões inter-estação, ${allFailedConnectionIds.length} falhas, ${coreStationIds.length} COREs`);
+
 
     const allStationIds = allStations.map((s) => s.id);
     const coreStationIds = allStations.filter((s) => s.isCore).map((s) => s.id);
@@ -60,6 +60,7 @@ export class SimulationsService {
       : [];
 
     const allFailedConnectionIds = [...new Set([...resolvedConnectionIds, ...stationFailureConnIds])];
+    console.log(`[Impact] ${allStations.length} estações, ${stationConnections.length} conexões inter-estação, ${allFailedConnectionIds.length} falhas, ${coreStationIds.length} COREs`);
 
     // Executa o motor de impacto
     const impact = this.graphService.computeImpact({
@@ -67,6 +68,7 @@ export class SimulationsService {
       allStationIds,
       coreStationIds,
       failedConnectionIds: allFailedConnectionIds,
+
     });
 
     const overheatStationIds = dto.overheatStationIds ?? [];
