@@ -1,4 +1,22 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, Component, ReactNode } from 'react';
+
+// ErrorBoundary evita que erros nos popups derrubem o mapa inteiro.
+class PopupErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
+  constructor(props: any) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e: any) { return { error: e?.message ?? 'Erro no popup' }; }
+  render() {
+    if (this.state.error) return (
+      <div style={{ color: '#ef4444', fontSize: 11, padding: 8 }}>
+        ⚠ Erro: {this.state.error}
+        <br /><button onClick={() => this.setState({ error: null })}
+          style={{ marginTop: 4, padding: '2px 8px', background: '#334155', border: 'none', borderRadius: 4, color: '#e2e8f0', fontSize: 10, cursor: 'pointer' }}>
+          Tentar novamente
+        </button>
+      </div>
+    );
+    return this.props.children;
+  }
+}
 import { MapContainer, TileLayer, Marker, Polyline, Popup, Tooltip, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -547,19 +565,21 @@ export function GeoMapPage() {
                           </span>
                         </div>
                         {/* Ações e nota — sempre mostra o painel de nó */}
-                        <ConnectionNotePanel
-                          link={link}
-                          simulationResult={simulationResult}
-                          failureState={failureState}
-                          onNormalize={async () => {
-                            const remaining = (simulationResult?.removedConnectionIds ?? []).filter(id => id !== link.id);
-                            await normalizeIds(remaining);
-                          }}
-                          onSaveNote={async (note: string) => {
-                            if (!simulationResult?.simulationId) return;
-                            await api.patch(`/simulations/${simulationResult.simulationId}/connection-note`, { connectionId: link.id, note });
-                          }}
-                        />
+                        <PopupErrorBoundary>
+                          <ConnectionNotePanel
+                            link={link}
+                            simulationResult={simulationResult}
+                            failureState={failureState}
+                            onNormalize={async () => {
+                              const remaining = (simulationResult?.removedConnectionIds ?? []).filter(id => id !== link.id);
+                              await normalizeIds(remaining);
+                            }}
+                            onSaveNote={async (note: string) => {
+                              if (!simulationResult?.simulationId) return;
+                              await api.patch(`/simulations/${simulationResult.simulationId}/connection-note`, { connectionId: link.id, note });
+                            }}
+                          />
+                        </PopupErrorBoundary>
                       </div>
                     </Popup>
                   </Polyline>
@@ -833,7 +853,7 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
       <textarea
         value={note} onChange={e => setNote(e.target.value)}
         placeholder='Ex: "Equipe em campo verificando equipamento."'
-        rows={4} autoFocus
+        rows={4}
         style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 6,
           color: '#e2e8f0', fontSize: 12, padding: '8px 10px', resize: 'vertical', marginBottom: 10,
           fontFamily: 'sans-serif' }}
@@ -910,20 +930,20 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
           {stationName}
         </Tooltip>
       )}
-      <Popup minWidth={280} maxWidth={340}>
-        <StationPopup
-          station={station}
-          state={state}
-          overheating={overheating}
-          touchingTypes={touchingTypes}
-          simulationResult={simulationResult}
-          stationActiveFailures={stationActiveFailures}
-          stationAllFailures={stationAllFailures}
-          onNormalizeStation={onNormalizeStation}
-          onSimulateFailure={onSimulateFailure}
-          onSimulateOverheat={onSimulateOverheat}
-          onNormalizeOverheat={onNormalizeOverheat}
-        />
+      <Popup minWidth={260} maxWidth={320}>
+        <PopupErrorBoundary>
+          <StationPopup
+            station={station}
+            state={state}
+            overheating={overheating}
+            stationActiveFailures={stationActiveFailures}
+            stationAllFailures={stationAllFailures}
+            onNormalizeStation={onNormalizeStation}
+            onSimulateFailure={onSimulateFailure}
+            onSimulateOverheat={onSimulateOverheat}
+            onNormalizeOverheat={onNormalizeOverheat}
+          />
+        </PopupErrorBoundary>
       </Popup>
     </Marker>
   );
@@ -1069,7 +1089,7 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, 
       <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8 }}>
         {selectedType.replace(/_/g, ' ')} · {link.name}
       </div>
-      <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} autoFocus
+      <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
         placeholder='"Equipe em campo verificando equipamento."'
         style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 5,
           color: '#e2e8f0', fontSize: 12, padding: '7px 9px', resize: 'vertical', marginBottom: 8 }} />
