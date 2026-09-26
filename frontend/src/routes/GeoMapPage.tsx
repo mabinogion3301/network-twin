@@ -615,7 +615,19 @@ export function GeoMapPage() {
                   overheating={overheating}
                   station={station}
                   simulationResult={simulationResult}
-                  onNormalizeStation={() => normalizeStation(station.id)}
+                  onNormalizeStation={async () => {
+                    // 1. Reseta a simulação manual
+                    normalizeStation(station.id);
+                    // 2. Restabelece todas as falhas operacionais ativas desta estação
+                    const stationFailures = (failureState?.failures ?? []).filter(
+                      (f: any) => f.targetId === station.id && f.status !== 'RESTORED'
+                    );
+                    for (const f of stationFailures) {
+                      try { await api.patch(`/failures/${f.id}/restore`); } catch {}
+                    }
+                    // 3. Atualiza failureState imediatamente
+                    failuresApi.impact().then(setFailureState);
+                  }}
                   onSimulateFailure={async () => {
                     const currentState = await simulationsApi.current().catch(() => null);
                     const activeConns = [...new Set([
