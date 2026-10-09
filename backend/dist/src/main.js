@@ -7,12 +7,13 @@ const http_exception_filter_1 = require("./common/filters/http-exception.filter"
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
     app.enableCors({ origin: process.env.FRONTEND_URL || '*' });
-    app.useGlobalPipes(new common_1.ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(new common_1.ValidationPipe({ transform: true }));
     app.useGlobalFilters(new http_exception_filter_1.HttpExceptionFilter());
     app.setGlobalPrefix('api');
     const port = process.env.PORT ?? 3000;
     await app.listen(port);
-    console.log(`Network Twin API rodando em http://localhost:${port}/api`);
+    console.log(`Network Twin API v1.1.0 rodando em http://localhost:${port}/api`);
+    console.log(`Módulos carregados: Auth, Stations, Simulations, Failures, Topology`);
 }
 bootstrap();
 //# sourceMappingURL=main.js.map

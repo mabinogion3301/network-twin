@@ -9,96 +9,115 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GraphService = void 0;
 const common_1 = require("@nestjs/common");
 let GraphService = class GraphService {
-    buildAdjacency(edges) {
-        const adjacency = new Map();
-        const addEntry = (from, to, connectionId) => {
-            const list = adjacency.get(from) ?? [];
-            list.push({ neighbor: to, connectionId });
-            adjacency.set(from, list);
-        };
-        for (const edge of edges) {
-            addEntry(edge.equipmentA, edge.equipmentB, edge.connectionId);
-            addEntry(edge.equipmentB, edge.equipmentA, edge.connectionId);
-        }
-        return adjacency;
-    }
-    connectedComponents(nodes, adjacency) {
-        const componentOf = new Map();
-        let componentId = 0;
-        for (const start of nodes) {
-            if (componentOf.has(start))
+    buildStationAdjacency(connections, failedIds) {
+        const adj = new Map();
+        for (const conn of connections) {
+            if (failedIds.has(conn.id))
                 continue;
-            const queue = [start];
-            componentOf.set(start, componentId);
-            while (queue.length > 0) {
-                const current = queue.shift();
-                const neighbors = adjacency.get(current) ?? [];
-                for (const { neighbor } of neighbors) {
-                    if (!componentOf.has(neighbor)) {
-                        componentOf.set(neighbor, componentId);
-                        queue.push(neighbor);
-                    }
+            if (conn.stationAId === conn.stationBId)
+                continue;
+            if (!adj.has(conn.stationAId))
+                adj.set(conn.stationAId, new Set());
+            if (!adj.has(conn.stationBId))
+                adj.set(conn.stationBId, new Set());
+            adj.get(conn.stationAId).add(conn.stationBId);
+            adj.get(conn.stationBId).add(conn.stationAId);
+        }
+        return adj;
+    }
+    bfs(adj, sources) {
+        const visited = new Set(sources);
+        const queue = [...sources];
+        while (queue.length > 0) {
+            const curr = queue.shift();
+            for (const neighbor of (adj.get(curr) ?? new Set())) {
+                if (!visited.has(neighbor)) {
+                    visited.add(neighbor);
+                    queue.push(neighbor);
                 }
             }
-            componentId++;
         }
-        return componentOf;
+        return visited;
+    }
+    computeImpact(input) {
+        const { stationConnections, allStationIds, coreStationIds, failedConnectionIds } = input;
+        const failed = new Set(failedConnectionIds);
+        const fullAdj = this.buildStationAdjacency(stationConnections, new Set());
+        const origDegree = new Map();
+        for (const stId of allStationIds) {
+            origDegree.set(stId, (fullAdj.get(stId) ?? new Set()).size);
+        }
+        const opAdj = this.buildStationAdjacency(stationConnections, failed);
+        const currDegree = new Map();
+        for (const stId of allStationIds) {
+            currDegree.set(stId, (opAdj.get(stId) ?? new Set()).size);
+        }
+        const managedStations = this.bfs(opAdj, coreStationIds);
+        const failureEndpoints = new Set();
+        for (const conn of stationConnections) {
+            if (failed.has(conn.id)) {
+                failureEndpoints.add(conn.stationAId);
+                failureEndpoints.add(conn.stationBId);
+            }
+        }
+        const failureZone = failed.size > 0
+            ? this.bfs(opAdj, [...failureEndpoints])
+            : new Set();
+        const stationStates = {};
+        const isolatedStationIds = [];
+        const degradingStationIds = [];
+        const impactedStationIds = [];
+        const normalStationIds = [];
+        for (const stId of allStationIds) {
+            let state;
+            if (!managedStations.has(stId)) {
+                state = 'ISOLATED';
+            }
+            else {
+                const orig = origDegree.get(stId) ?? 0;
+                const curr = currDegree.get(stId) ?? 0;
+                if (curr < orig) {
+                    state = 'DEGRADING';
+                }
+                else if (failureZone.has(stId)) {
+                    state = 'IMPACTED';
+                }
+                else {
+                    state = 'NORMAL';
+                }
+            }
+            stationStates[stId] = state;
+            if (state === 'ISOLATED')
+                isolatedStationIds.push(stId);
+            else if (state === 'DEGRADING')
+                degradingStationIds.push(stId);
+            else if (state === 'IMPACTED')
+                impactedStationIds.push(stId);
+            else
+                normalStationIds.push(stId);
+        }
+        return {
+            stationStates,
+            isolatedStationIds,
+            degradingStationIds,
+            impactedStationIds,
+            normalStationIds,
+            stats: {
+                total: allStationIds.length,
+                normal: normalStationIds.length,
+                degrading: degradingStationIds.length,
+                impacted: impactedStationIds.length,
+                isolated: isolatedStationIds.length,
+            },
+        };
     }
     simulateFailure(input) {
-        const { allEquipmentIds, equipmentToStation, allEdges, directStationLinks, removedConnectionIds, removedEquipmentIds, } = input;
-        const removedEquipmentSet = new Set(removedEquipmentIds);
-        const removedConnectionSet = new Set(removedConnectionIds);
-        const remainingEdges = allEdges.filter((edge) => !removedConnectionSet.has(edge.connectionId) &&
-            !removedEquipmentSet.has(edge.equipmentA) &&
-            !removedEquipmentSet.has(edge.equipmentB));
-        const remainingEquipmentIds = allEquipmentIds.filter((id) => !removedEquipmentSet.has(id));
-        const adjacency = this.buildAdjacency(remainingEdges);
-        const componentOf = this.connectedComponents(remainingEquipmentIds, adjacency);
-        const stationToComponents = new Map();
-        const stationToEquipmentCount = new Map();
-        for (const equipmentId of remainingEquipmentIds) {
-            const stationId = equipmentToStation[equipmentId];
-            const comp = componentOf.get(equipmentId);
-            if (stationId === undefined || comp === undefined)
-                continue;
-            if (!stationToComponents.has(stationId))
-                stationToComponents.set(stationId, new Set());
-            stationToComponents.get(stationId).add(comp);
-            stationToEquipmentCount.set(stationId, (stationToEquipmentCount.get(stationId) ?? 0) + 1);
-        }
-        const unavailableStationPairs = directStationLinks
-            .filter((link) => {
-            const compsA = stationToComponents.get(link.stationAId) ?? new Set();
-            const compsB = stationToComponents.get(link.stationBId) ?? new Set();
-            const stillConnected = [...compsA].some((c) => compsB.has(c));
-            return !stillConnected;
-        })
-            .map((link) => ({ linkId: link.linkId, stationAId: link.stationAId, stationBId: link.stationBId }));
-        const isolatedEquipmentIds = remainingEquipmentIds.filter((equipmentId) => {
-            const myComponent = componentOf.get(equipmentId);
-            const myStation = equipmentToStation[equipmentId];
-            return !remainingEquipmentIds.some((otherId) => {
-                if (otherId === equipmentId)
-                    return false;
-                return (componentOf.get(otherId) === myComponent && equipmentToStation[otherId] !== myStation);
-            });
-        });
-        const impactedConnectionIds = allEdges
-            .filter((edge) => removedConnectionSet.has(edge.connectionId))
-            .filter((edge) => {
-            const stillReachable = !removedEquipmentSet.has(edge.equipmentA) &&
-                !removedEquipmentSet.has(edge.equipmentB) &&
-                componentOf.get(edge.equipmentA) !== undefined &&
-                componentOf.get(edge.equipmentA) === componentOf.get(edge.equipmentB);
-            return !stillReachable;
-        })
-            .map((edge) => edge.connectionId);
         return {
-            unavailableStationPairs,
-            isolatedEquipmentIds,
-            impactedConnectionIds,
-            remainingEquipmentCount: remainingEquipmentIds.length,
-            remainingEdgeCount: remainingEdges.length,
+            unavailableStationPairs: [],
+            isolatedEquipmentIds: [],
+            impactedConnectionIds: [],
+            remainingEquipmentCount: 0,
+            remainingEdgeCount: 0,
         };
     }
 };

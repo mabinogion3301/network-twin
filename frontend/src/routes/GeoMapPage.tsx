@@ -313,7 +313,15 @@ export function GeoMapPage() {
   // garantindo resultado correto independente do que o backend retornar.
   const computedStationStates = (() => {
     const result: Record<string, StationVisualState> = {};
-    if (!simulationResult || removedConnectionIds.size === 0) return result;
+
+    // Estações com MANAGEMENT_FAILURE ativa — tratadas como offline no BFS
+    const managementFailureStationIds = new Set<string>(
+      (failureState?.failures ?? [])
+        .filter((f: any) => f.type === 'MANAGEMENT_FAILURE' && f.status !== 'RESTORED')
+        .map((f: any) => f.targetId as string)
+    );
+
+    if ((!simulationResult || removedConnectionIds.size === 0) && managementFailureStationIds.size === 0) return result;
 
     // Grafo completo e grafo operacional (sem falhas)
     const fullAdj = new Map<string, Set<string>>();
@@ -326,6 +334,8 @@ export function GeoMapPage() {
       fullAdj.get(link.targetStationId)!.add(link.sourceStationId);
 
       if (removedConnectionIds.has(link.id)) continue;
+      // MANAGEMENT_FAILURE: estação sem gerência — remove todas as suas conexões do grafo operacional
+      if (managementFailureStationIds.has(link.sourceStationId) || managementFailureStationIds.has(link.targetStationId)) continue;
       if (!opAdj.has(link.sourceStationId)) opAdj.set(link.sourceStationId, new Set());
       if (!opAdj.has(link.targetStationId)) opAdj.set(link.targetStationId, new Set());
       opAdj.get(link.sourceStationId)!.add(link.targetStationId);
@@ -418,9 +428,19 @@ export function GeoMapPage() {
     return 'none';
   }
 
-  function colorForLink(link: GeoLink): { color: string; dashed: boolean; broken: boolean } {
+  function colorForLink(link: GeoLink): { color: string; dashed: boolean; broken: boolean; opacity?: number } {
     if (removedConnectionIds.has(link.id)) {
       return { color: ISOLATED_COLOR, dashed: true, broken: true };
+    }
+    // Falhas operacionais ativas neste link — têm prioridade visual
+    const activeNodeFailures = (failureState?.failures ?? []).filter(
+      (f: any) => f.targetId === link.id && f.status !== 'RESTORED'
+    );
+    if (activeNodeFailures.some((f: any) => f.type === 'NODE_RUPTURE')) {
+      return { color: '#dc2626', dashed: true, broken: false };
+    }
+    if (activeNodeFailures.some((f: any) => f.type === 'NODE_ATTENUATION')) {
+      return { color: '#ea580c', dashed: false, broken: false, opacity: 0.5 };
     }
     // Link que toca uma estação isolada ou degradada fica com a cor de alerta
     if (simulationResult) {
@@ -507,7 +527,7 @@ export function GeoMapPage() {
                 const target = stationById[link.targetStationId];
                 if (!source?.latitude || !target?.latitude) return null;
 
-                const { color, dashed, broken } = colorForLink(link);
+                const { color, dashed, broken, opacity } = colorForLink(link);
                 const typeStyle = CONNECTION_TYPE_STYLES[link.type];
 
                 const pairKey = [link.sourceStationId, link.targetStationId].sort().join('|');
@@ -530,7 +550,7 @@ export function GeoMapPage() {
                   <Polyline
                     key={link.id}
                     positions={positions}
-                    pathOptions={{ color, weight: broken ? 4 : 3, dashArray: dashed ? '8 6' : undefined }}
+                    pathOptions={{ color, weight: broken ? 4 : 3, dashArray: dashed ? '8 6' : undefined, opacity: opacity ?? 1 }}
                   >
                     <Popup>
                       <div style={{ minWidth: 200 }}>
@@ -574,6 +594,14 @@ export function GeoMapPage() {
                             onNormalize={async () => {
                               const remaining = (simulationResult?.removedConnectionIds ?? []).filter(id => id !== link.id);
                               await normalizeIds(remaining);
+                            }}
+                            onSimulate={async () => {
+                              const activeConns = [...new Set([...(simulationResult?.removedConnectionIds ?? [])])];
+                              const res = await api.post('/simulations', {
+                                connectionIds: [...new Set([...activeConns, link.id])],
+                              });
+                              if (res?.data) setSimulationResult(res.data);
+                              load();
                             }}
                             onSaveNote={async (note: string) => {
                               if (!simulationResult?.simulationId) return;
@@ -702,8 +730,8 @@ const popInp: React.CSSProperties = {
 function StationPopup({ station, state, overheating, stationActiveFailures, stationAllFailures,
   onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat, onRefresh }: any) {
 
-  // Fluxo em etapas: main → selectType → writeNote → confirm → restoreConfirm
-  const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm'>('main');
+  // Fluxo em etapas: main → selectType → writeNote → confirm → restoreConfirm | history
+  const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm' | 'history'>('main');
   const [selectedType, setSelectedType] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -818,9 +846,21 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <button
           onClick={() => { setSelectedType(''); setNote(''); setSaveError(''); setView('selectType'); }}
+          style={{ width: '100%', padding: '8px', background: '#b91c1c', border: 'none', borderRadius: 6, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
+        >
+          📋 REGISTRAR FALHA
+        </button>
+        <button
+          onClick={onSimulateFailure}
           style={{ width: '100%', padding: '8px', background: '#dc2626', border: 'none', borderRadius: 6, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
         >
           ⚡ SIMULAR FALHA
+        </button>
+        <button
+          onClick={() => setView('history')}
+          style={{ width: '100%', padding: '6px', background: '#1e293b', border: '1px solid #334155', borderRadius: 6, color: '#94a3b8', fontWeight: 600, fontSize: 11, cursor: 'pointer' }}
+        >
+          📋 Ver Histórico
         </button>
         {state !== 'NORMAL' && (
           <button onClick={onNormalizeStation}
@@ -835,7 +875,7 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
   // ── Etapa 1: Selecionar tipo de falha ──────────────────────────────────
   if (view === 'selectType') return (
     <div style={{ minWidth: 240 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>SIMULAR FALHA</div>
+      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>REGISTRAR FALHA</div>
       <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12 }}>Estação: {station?.name}</div>
       <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>Selecione o tipo de falha:</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
@@ -918,6 +958,55 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
     </div>
   );
 
+  // ── Histórico de falhas desta estação ───────────────────────────────────
+  if (view === 'history') {
+    const history = stationAllFailures ?? [];
+    const statusBadge = (st: string) => {
+      if (st === 'ACTIVE')       return { icon: '🔴', bg: '#7f1d1d', color: '#fca5a5' };
+      if (st === 'ACKNOWLEDGED') return { icon: '🟡', bg: '#78350f', color: '#fde68a' };
+      return                            { icon: '🟢', bg: '#064e3b', color: '#6ee7b7' };
+    };
+    const fmtDate = (iso: string) => {
+      try {
+        const d = new Date(iso);
+        return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      } catch { return iso; }
+    };
+    return (
+      <div style={{ minWidth: 240 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>📋 HISTÓRICO</div>
+        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>{station?.name}</div>
+        {history.length === 0 ? (
+          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>Nenhuma falha registrada.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10, maxHeight: 260, overflowY: 'auto' }}>
+            {history.map((f: any) => {
+              const badge = statusBadge(f.status);
+              return (
+                <div key={f.id} style={{ background: '#1e293b', borderRadius: 5, padding: '6px 8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                    <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 600 }}>
+                      {FAILURE_ICONS_MAP[f.type] ?? '⚠️'} {(f.type ?? '').replace(/_/g, ' ')}
+                    </span>
+                    <span style={{ fontSize: 9, background: badge.bg, color: badge.color, borderRadius: 3, padding: '1px 4px' }}>
+                      {badge.icon} {f.status}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>{fmtDate(f.createdAt)}</div>
+                  {f.note && <div style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginTop: 2 }}>"{f.note}"</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button onClick={() => setView('main')}
+          style={{ width: '100%', padding: '7px', background: '#334155', border: 'none', borderRadius: 6, color: '#e2e8f0', fontSize: 12, cursor: 'pointer' }}>
+          ← Voltar
+        </button>
+      </div>
+    );
+  }
+
   return null;
 }
 
@@ -975,16 +1064,17 @@ function DynamicMarker({ position, icon, draggable, onDragEnd, zoom, stationName
   );
 }
 
-// Popup de conexão/nó — fluxo: info → simular falha → tipo → nota → confirmar → restabelecer
-function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, failureState, onRefresh }: {
+// Popup de conexão/nó — fluxo: info → registrar falha → tipo → nota → confirmar | simular | histórico
+function ConnectionNotePanel({ link, simulationResult, onNormalize, onSimulate, onSaveNote, failureState, onRefresh }: {
   link: any;
   simulationResult: SimulationResult | null;
   onNormalize: () => Promise<void>;
+  onSimulate?: () => Promise<void>;
   onSaveNote: (note: string) => Promise<void>;
   failureState: FailureImpactState | null;
   onRefresh?: () => void;
 }) {
-  const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm'>('main');
+  const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm' | 'history'>('main');
   const [selectedType, setSelectedType] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1061,13 +1151,25 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, 
         {saving ? '...' : '💾 Salvar Nota'}
       </button>
 
-      {/* Simular falha */}
+      {/* Registrar falha operacional */}
       {!nodeFailure && (
         <button onClick={() => { setSelectedType(''); setNote(''); setSaveError(''); setView('selectType'); }}
-          style={{ padding: '7px', background: '#dc2626', border: 'none', borderRadius: 5, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-          ⚡ SIMULAR FALHA
+          style={{ padding: '7px', background: '#b91c1c', border: 'none', borderRadius: 5, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+          📋 REGISTRAR FALHA
         </button>
       )}
+
+      {/* Simular falha (ephemeral) */}
+      <button onClick={onSimulate}
+        style={{ padding: '7px', background: '#dc2626', border: 'none', borderRadius: 5, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+        ⚡ SIMULAR FALHA
+      </button>
+
+      {/* Ver histórico */}
+      <button onClick={() => setView('history')}
+        style={{ padding: '5px', background: '#1e293b', border: '1px solid #334155', borderRadius: 5, color: '#94a3b8', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+        📋 Ver Histórico
+      </button>
 
       {/* Normalizar simulação manual */}
       <button onClick={onNormalize}
@@ -1080,7 +1182,7 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, 
   // ── Selecionar tipo ──
   if (view === 'selectType') return (
     <div style={{ minWidth: 200 }}>
-      <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', marginBottom: 2 }}>SIMULAR FALHA</div>
+      <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', marginBottom: 2 }}>REGISTRAR FALHA</div>
       <div style={{ fontSize: 10, color: '#64748b', marginBottom: 10 }}>Nó: {link.name}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 }}>
         {TYPES_NODE.map(t => (
@@ -1155,6 +1257,55 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSaveNote, 
       </div>
     </div>
   );
+
+  // ── Histórico de falhas deste nó ──
+  if (view === 'history') {
+    const allNodeFailures = (failureState?.failures ?? []).filter((f: any) => f.targetId === link.id);
+    const statusBadge = (st: string) => {
+      if (st === 'ACTIVE')       return { icon: '🔴', bg: '#7f1d1d', color: '#fca5a5' };
+      if (st === 'ACKNOWLEDGED') return { icon: '🟡', bg: '#78350f', color: '#fde68a' };
+      return                            { icon: '🟢', bg: '#064e3b', color: '#6ee7b7' };
+    };
+    const fmtDate = (iso: string) => {
+      try {
+        const d = new Date(iso);
+        return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+      } catch { return iso; }
+    };
+    return (
+      <div style={{ minWidth: 200 }}>
+        <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', marginBottom: 2 }}>📋 HISTÓRICO</div>
+        <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8 }}>{link.name}</div>
+        {allNodeFailures.length === 0 ? (
+          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>Nenhuma falha registrada.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8, maxHeight: 220, overflowY: 'auto' }}>
+            {allNodeFailures.map((f: any) => {
+              const badge = statusBadge(f.status);
+              return (
+                <div key={f.id} style={{ background: '#1e293b', borderRadius: 5, padding: '5px 7px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                    <span style={{ fontSize: 11, color: '#e2e8f0', fontWeight: 600 }}>
+                      {FAILURE_ICONS_MAP[f.type] ?? '⚠️'} {(f.type ?? '').replace(/_/g, ' ')}
+                    </span>
+                    <span style={{ fontSize: 9, background: badge.bg, color: badge.color, borderRadius: 3, padding: '1px 4px' }}>
+                      {badge.icon} {f.status}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>{fmtDate(f.createdAt)}</div>
+                  {f.note && <div style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginTop: 2 }}>"{f.note}"</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button onClick={() => setView('main')}
+          style={{ width: '100%', padding: '6px', background: '#334155', border: 'none', borderRadius: 5, color: '#e2e8f0', fontSize: 11, cursor: 'pointer' }}>
+          ← Voltar
+        </button>
+      </div>
+    );
+  }
 
   return null;
 }

@@ -65,6 +65,8 @@ export declare class TopologyService {
             longitude: number;
             status: import(".prisma/client").$Enums.StationStatus;
             trechos: string[];
+            equipmentIds: string[];
+            isCore: any;
         }[];
         links: {
             id: string;

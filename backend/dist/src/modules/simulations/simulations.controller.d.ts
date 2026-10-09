@@ -6,26 +6,21 @@ export declare class SimulationsController {
     constructor(service: SimulationsService);
     run(dto: RunSimulationDto, user: JwtPayload): Promise<{
         removedConnectionIds: string[];
-        removedEquipmentIds: string[];
-        unavailableStationPairs: {
-            stationAName: string;
-            stationBName: string;
-            linkId: string;
-            stationAId: string;
-            stationBId: string;
-        }[];
-        isolatedEquipment: {
-            id: string;
-            name: string;
-        }[];
-        impactedConnections: {
-            id: string;
-            name: string;
-        }[];
-        isolatedEquipmentIds: string[];
-        impactedConnectionIds: string[];
-        remainingEquipmentCount: number;
-        remainingEdgeCount: number;
+        failedStationIds: string[];
+        overheatStationIds: string[];
+        stationStates: Record<string, import("../graph/graph.types").StationImpactState>;
+        isolatedStationIds: string[];
+        degradingStationIds: string[];
+        impactedStationIds: string[];
+        normalStationIds: string[];
+        stats: {
+            total: number;
+            normal: number;
+            degrading: number;
+            impacted: number;
+            isolated: number;
+        };
+        coreStationIds: string[];
         simulationId: string;
     }>;
     findHistory(): import(".prisma/client").Prisma.PrismaPromise<{
@@ -54,6 +49,13 @@ export declare class SimulationsController {
     }>;
     updateNotes(id: string, body: {
         notes: string;
+    }): Promise<{
+        simulationId: string;
+        notes: string;
+    }>;
+    updateConnectionNote(id: string, body: {
+        connectionId: string;
+        note: string;
     }): Promise<{
         simulationId: string;
         notes: string;

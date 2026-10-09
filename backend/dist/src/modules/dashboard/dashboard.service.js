@@ -29,8 +29,9 @@ let DashboardService = class DashboardService {
         ]);
         const activeResult = latestSimulation?.resultJson;
         const linksInFailure = activeResult?.removedConnectionIds?.length ?? 0;
-        const equipmentInFailure = activeResult?.isolatedEquipmentIds?.length ?? 0;
-        const stationsInFailure = new Set((activeResult?.unavailableStationPairs ?? []).flatMap((p) => [p.stationAId, p.stationBId])).size;
+        const stationsIsolated = activeResult?.stats?.isolated ?? 0;
+        const stationsDegrading = activeResult?.stats?.degrading ?? 0;
+        const stationsImpacted = activeResult?.stats?.impacted ?? 0;
         return {
             stationsCount,
             equipmentsCount,
@@ -39,9 +40,10 @@ let DashboardService = class DashboardService {
             offlineStations,
             offlineEquipments,
             linksInFailure,
-            equipmentInFailure,
-            stationsInFailure,
-            hasActiveSimulation: linksInFailure > 0 || equipmentInFailure > 0,
+            stationsIsolated,
+            stationsDegrading,
+            stationsImpacted,
+            hasActiveSimulation: linksInFailure > 0 || stationsIsolated > 0,
             recentSimulations,
         };
     }

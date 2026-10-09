@@ -58,8 +58,8 @@ export declare class SearchController {
             status: import(".prisma/client").$Enums.ConnectionStatus;
             updatedAt: Date;
             type: import(".prisma/client").$Enums.ConnectionType;
-            sourcePortId: string;
             targetPortId: string;
+            sourcePortId: string;
             distance: number | null;
             fiberCount: number | null;
             fibersUsed: number | null;

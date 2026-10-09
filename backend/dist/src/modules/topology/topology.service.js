@@ -95,6 +95,15 @@ let TopologyService = class TopologyService {
     }
     async getGeoTopology() {
         const stations = await this.prisma.station.findMany();
+        const equipments = await this.prisma.equipment.findMany({
+            select: { id: true, stationId: true },
+        });
+        const equipmentsByStation = new Map();
+        for (const eq of equipments) {
+            const list = equipmentsByStation.get(eq.stationId) ?? [];
+            list.push(eq.id);
+            equipmentsByStation.set(eq.stationId, list);
+        }
         const connections = await this.prisma.connection.findMany({
             include: {
                 sourcePort: { include: { equipment: true } },
@@ -126,6 +135,8 @@ let TopologyService = class TopologyService {
                 longitude: s.longitude,
                 status: s.status,
                 trechos: s.trechos ?? [],
+                equipmentIds: equipmentsByStation.get(s.id) ?? [],
+                isCore: s.isCore ?? false,
             })),
             links: interStationLinks,
         };

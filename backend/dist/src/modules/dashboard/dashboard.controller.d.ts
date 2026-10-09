@@ -10,8 +10,9 @@ export declare class DashboardController {
         offlineStations: number;
         offlineEquipments: number;
         linksInFailure: number;
-        equipmentInFailure: number;
-        stationsInFailure: number;
+        stationsIsolated: number;
+        stationsDegrading: number;
+        stationsImpacted: number;
         hasActiveSimulation: boolean;
         recentSimulations: {
             id: string;

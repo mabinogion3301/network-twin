@@ -29,6 +29,7 @@ const simulations_module_1 = require("./modules/simulations/simulations.module")
 const events_gateway_module_1 = require("./modules/events-gateway/events-gateway.module");
 const dashboard_module_1 = require("./modules/dashboard/dashboard.module");
 const search_module_1 = require("./modules/search/search.module");
+const failures_module_1 = require("./modules/failures/failures.module");
 const audit_log_interceptor_1 = require("./common/interceptors/audit-log.interceptor");
 let AppModule = class AppModule {
 };
@@ -56,6 +57,7 @@ exports.AppModule = AppModule = __decorate([
             events_gateway_module_1.EventsGatewayModule,
             dashboard_module_1.DashboardModule,
             search_module_1.SearchModule,
+            failures_module_1.FailuresModule,
         ],
         providers: [
             {

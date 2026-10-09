@@ -30,6 +30,9 @@ let EventsGateway = EventsGateway_1 = class EventsGateway {
     broadcastTopologyChanged() {
         this.server.emit('topology:changed');
     }
+    broadcastFailureUpdate(payload) {
+        this.server.emit('failure:update', payload);
+    }
 };
 exports.EventsGateway = EventsGateway;
 __decorate([

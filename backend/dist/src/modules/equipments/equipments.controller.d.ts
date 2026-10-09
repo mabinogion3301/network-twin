@@ -19,10 +19,6 @@ export declare class EquipmentsController {
             status: import(".prisma/client").$Enums.StationStatus;
             updatedAt: Date;
         };
-        type: {
-            id: string;
-            name: string;
-        };
         model: {
             manufacturer: {
                 id: string;
@@ -32,6 +28,10 @@ export declare class EquipmentsController {
             id: string;
             name: string;
             manufacturerId: string;
+        };
+        type: {
+            id: string;
+            name: string;
         };
         ports: {
             number: number;
@@ -75,10 +75,6 @@ export declare class EquipmentsController {
             status: import(".prisma/client").$Enums.StationStatus;
             updatedAt: Date;
         };
-        type: {
-            id: string;
-            name: string;
-        };
         model: {
             manufacturer: {
                 id: string;
@@ -88,6 +84,10 @@ export declare class EquipmentsController {
             id: string;
             name: string;
             manufacturerId: string;
+        };
+        type: {
+            id: string;
+            name: string;
         };
         ports: {
             number: number;

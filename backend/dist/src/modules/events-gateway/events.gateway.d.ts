@@ -7,4 +7,5 @@ export declare class EventsGateway implements OnGatewayConnection, OnGatewayDisc
     handleDisconnect(client: Socket): void;
     broadcastSimulationResult(payload: unknown): void;
     broadcastTopologyChanged(): void;
+    broadcastFailureUpdate(payload: unknown): void;
 }

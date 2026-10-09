@@ -14,6 +14,7 @@ export declare class CreateStationDto {
     notes?: string;
     trechos?: string[];
     status?: StationStatusDto;
+    isCore?: boolean;
 }
 export declare class UpdateStationDto {
     name?: string;
@@ -25,6 +26,7 @@ export declare class UpdateStationDto {
     mapPositionY?: number;
     notes?: string;
     trechos?: string[];
+    isCore?: boolean;
     status?: StationStatusDto;
 }
 export declare class StationQueryDto {

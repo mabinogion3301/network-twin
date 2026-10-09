@@ -38,8 +38,8 @@ export declare class StationLinksService {
         id: string;
         createdAt: Date;
         notes: string | null;
-        stationAId: string;
         stationBId: string;
+        stationAId: string;
     })[]>;
     findOne(id: string): Promise<{
         stationA: {
@@ -76,29 +76,29 @@ export declare class StationLinksService {
         id: string;
         createdAt: Date;
         notes: string | null;
-        stationAId: string;
         stationBId: string;
+        stationAId: string;
     }>;
     create(dto: CreateStationLinkDto): Promise<{
         id: string;
         createdAt: Date;
         notes: string | null;
-        stationAId: string;
         stationBId: string;
+        stationAId: string;
     }>;
     update(id: string, dto: UpdateStationLinkDto): Promise<{
         id: string;
         createdAt: Date;
         notes: string | null;
-        stationAId: string;
         stationBId: string;
+        stationAId: string;
     }>;
     remove(id: string): Promise<{
         id: string;
         createdAt: Date;
         notes: string | null;
-        stationAId: string;
         stationBId: string;
+        stationAId: string;
     }>;
     private ensureExists;
 }

@@ -47,6 +47,10 @@ export class CreateStationDto {
   @IsOptional()
   @IsEnum(StationStatusDto)
   status?: StationStatusDto;
+
+  @IsOptional()
+  @IsBoolean()
+  isCore?: boolean;
 }
 
 export class UpdateStationDto {

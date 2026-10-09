@@ -71,6 +71,11 @@ __decorate([
     (0, class_validator_1.IsEnum)(StationStatusDto),
     __metadata("design:type", String)
 ], CreateStationDto.prototype, "status", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateStationDto.prototype, "isCore", void 0);
 class UpdateStationDto {
 }
 exports.UpdateStationDto = UpdateStationDto;
@@ -120,6 +125,11 @@ __decorate([
     (0, class_validator_1.IsString)({ each: true }),
     __metadata("design:type", Array)
 ], UpdateStationDto.prototype, "trechos", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], UpdateStationDto.prototype, "isCore", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsEnum)(StationStatusDto),
