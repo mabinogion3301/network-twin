@@ -6,7 +6,6 @@ export declare class StationsController {
     findAll(query: StationQueryDto): import(".prisma/client").Prisma.PrismaPromise<{
         id: string;
         name: string;
-        createdAt: Date;
         city: string;
         state: string;
         latitude: number | null;
@@ -16,6 +15,7 @@ export declare class StationsController {
         notes: string | null;
         trechos: string[];
         status: import(".prisma/client").$Enums.StationStatus;
+        createdAt: Date;
         updatedAt: Date;
     }[]>;
     findOne(id: string): Promise<{
@@ -36,8 +36,8 @@ export declare class StationsController {
         } & {
             id: string;
             name: string;
-            createdAt: Date;
             status: import(".prisma/client").$Enums.EquipmentStatus;
+            createdAt: Date;
             updatedAt: Date;
             stationId: string;
             typeId: string;
@@ -53,7 +53,6 @@ export declare class StationsController {
     } & {
         id: string;
         name: string;
-        createdAt: Date;
         city: string;
         state: string;
         latitude: number | null;
@@ -63,12 +62,12 @@ export declare class StationsController {
         notes: string | null;
         trechos: string[];
         status: import(".prisma/client").$Enums.StationStatus;
+        createdAt: Date;
         updatedAt: Date;
     }>;
     create(dto: CreateStationDto): Promise<{
         id: string;
         name: string;
-        createdAt: Date;
         city: string;
         state: string;
         latitude: number | null;
@@ -78,12 +77,12 @@ export declare class StationsController {
         notes: string | null;
         trechos: string[];
         status: import(".prisma/client").$Enums.StationStatus;
+        createdAt: Date;
         updatedAt: Date;
     }>;
     update(id: string, dto: UpdateStationDto): Promise<{
         id: string;
         name: string;
-        createdAt: Date;
         city: string;
         state: string;
         latitude: number | null;
@@ -93,12 +92,12 @@ export declare class StationsController {
         notes: string | null;
         trechos: string[];
         status: import(".prisma/client").$Enums.StationStatus;
+        createdAt: Date;
         updatedAt: Date;
     }>;
     remove(id: string): Promise<{
         id: string;
         name: string;
-        createdAt: Date;
         city: string;
         state: string;
         latitude: number | null;
@@ -108,6 +107,7 @@ export declare class StationsController {
         notes: string | null;
         trechos: string[];
         status: import(".prisma/client").$Enums.StationStatus;
+        createdAt: Date;
         updatedAt: Date;
     }>;
 }

@@ -40,13 +40,20 @@ let StationsService = class StationsService {
         return station;
     }
     async create(dto) {
-        const result = await this.prisma.station.create({ data: dto });
+        const { name, city, state, latitude, longitude, mapPositionX, mapPositionY, notes, trechos, status, isCore } = dto;
+        const result = await this.prisma.station.create({
+            data: { name, city, state, latitude, longitude, mapPositionX, mapPositionY, notes, trechos, status, isCore },
+        });
         this.events.broadcastTopologyChanged();
         return result;
     }
     async update(id, dto) {
         await this.ensureExists(id);
-        const result = await this.prisma.station.update({ where: { id }, data: dto });
+        const { name, city, state, latitude, longitude, mapPositionX, mapPositionY, notes, trechos, status, isCore } = dto;
+        const result = await this.prisma.station.update({
+            where: { id },
+            data: { name, city, state, latitude, longitude, mapPositionX, mapPositionY, notes, trechos, status, isCore },
+        });
         this.events.broadcastTopologyChanged();
         return result;
     }
