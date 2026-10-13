@@ -27,28 +27,18 @@ async function main() {
     create: {
       name: 'Operador',
       permissions: {
-        'stations.read': true,
-        'equipments.read': true,
-        'ports.read': true,
-        'connections.read': true,
-        'simulations.run': true,
-        'simulations.read': true,
+        'stations.read': true, 'equipments.read': true, 'ports.read': true,
+        'connections.read': true, 'simulations.run': true, 'simulations.read': true,
       },
     },
   });
 
   const passwordHash = await bcrypt.hash('Lacoste123', 10);
 
-  // Atualiza o usuário admin existente com as novas credenciais
   await prisma.user.upsert({
-    where: { email: 'admin@telebras.local' },
-    update: { email: 'marcelo@martins', passwordHash, name: 'Marcelo' },
-    create: {
-      name: 'Marcelo',
-      email: 'marcelo@martins',
-      passwordHash,
-      roleId: adminRole.id,
-    },
+    where: { email: 'marcelo@martins' },
+    update: { passwordHash, name: 'Marcelo' },
+    create: { name: 'Marcelo', email: 'marcelo@martins', passwordHash, roleId: adminRole.id },
   });
 
   const types = ['Switch', 'Roteador', 'OLT', 'ONU', 'Rádio', 'Servidor', 'Firewall', 'Patch Panel', 'Conversor de mídia', 'Outro'];
