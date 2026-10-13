@@ -34,12 +34,20 @@ async function main() {
   });
 
   const passwordHash = await bcrypt.hash('Lacoste123', 10);
+  const adminHash = await bcrypt.hash('admin123', 10);
 
-  // Upsert por marcelo@martins (já existe no banco — atualiza a senha)
+  // Usuário principal
   await prisma.user.upsert({
     where: { email: 'marcelo@martins' },
     update: { passwordHash, name: 'Marcelo' },
     create: { name: 'Marcelo', email: 'marcelo@martins', passwordHash, roleId: adminRole.id },
+  });
+
+  // Usuário admin de fallback
+  await prisma.user.upsert({
+    where: { email: 'admin@telebras.local' },
+    update: { passwordHash: adminHash },
+    create: { name: 'Admin', email: 'admin@telebras.local', passwordHash: adminHash, roleId: adminRole.id },
   });
 
   const types = ['Switch', 'Roteador', 'OLT', 'ONU', 'Rádio', 'Servidor', 'Firewall', 'Patch Panel', 'Conversor de mídia', 'Outro'];
@@ -47,7 +55,9 @@ async function main() {
     await prisma.equipmentType.upsert({ where: { name }, update: {}, create: { name } });
   }
 
-  console.log('Seed concluído. Usuário: marcelo@martins / senha: Lacoste123');
+  console.log('Seed concluído.');
+  console.log('  - marcelo@martins / Lacoste123');
+  console.log('  - admin@telebras.local / admin123');
 }
 
 main()
