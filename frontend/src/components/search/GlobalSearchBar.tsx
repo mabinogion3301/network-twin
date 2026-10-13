@@ -24,7 +24,7 @@ export function GlobalSearchBar() {
         setResults(r.data);
         setOpen(true);
       });
-    }, 300); // debounce simples
+    }, 300);
     return () => clearTimeout(timeout);
   }, [query]);
 
@@ -40,7 +40,7 @@ export function GlobalSearchBar() {
     results && (results.stations.length + results.equipments.length + results.connections.length + results.ports.length > 0);
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: 360 }}>
+    <div ref={containerRef} style={{ position: 'relative', width: 360, zIndex: 2000 }}>
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
@@ -49,7 +49,7 @@ export function GlobalSearchBar() {
         style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0' }}
       />
       {open && results && (
-        <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: 8, zIndex: 50, maxHeight: 360, overflowY: 'auto' }}>
+        <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: 8, zIndex: 2000, maxHeight: 360, overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
           {!hasResults && <p style={{ color: '#64748b', fontSize: 13, padding: 8 }}>Nenhum resultado.</p>}
 
           {results.stations.length > 0 && (
