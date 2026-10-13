@@ -407,7 +407,9 @@ export function GeoMapPage() {
       const origDeg = (fullAdj.get(station.id) ?? new Set()).size;
       const currDeg = (opAdj.get(station.id)  ?? new Set()).size;
 
-      if (!managedStations.has(station.id)) {
+      if (!managedStations.has(station.id) && origDeg > 0) {
+        // Só marca ISOLATED se o nó tem conexões mas não alcança o CORE.
+        // Nós sem links (recém adicionados) ficam NORMAL mesmo com CORE definido.
         result[station.id] = 'ISOLATED';
       } else if (currDeg < origDeg) {
         result[station.id] = 'DEGRADING';
