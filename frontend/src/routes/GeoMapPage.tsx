@@ -769,8 +769,8 @@ const popInp: React.CSSProperties = {
 function StationPopup({ station, state, overheating, stationActiveFailures, stationAllFailures,
   onNormalizeStation, onSimulateFailure, onSimulateOverheat, onNormalizeOverheat, onRefresh }: any) {
 
-  // Fluxo em etapas: main → selectType → writeNote → confirm → restoreConfirm | history
-  const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm' | 'history'>('main');
+  // Fluxo: main → registerForm (tudo em 1 tela) | restoreConfirm | history
+  const [view, setView] = useState<'main' | 'registerForm' | 'restoreConfirm' | 'history'>('main');
   const [selectedType, setSelectedType] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -884,7 +884,7 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
       {/* Ações principais */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <button
-          onClick={() => { setSelectedType(''); setNote(''); setSaveError(''); setView('selectType'); }}
+          onClick={() => { setSelectedType(''); setNote(''); setSaveError(''); setView('registerForm'); }}
           style={{ width: '100%', padding: '8px', background: '#b91c1c', border: 'none', borderRadius: 6, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
         >
           📋 REGISTRAR FALHA
@@ -911,65 +911,41 @@ function StationPopup({ station, state, overheating, stationActiveFailures, stat
     </div>
   );
 
-  // ── Etapa 1: Selecionar tipo de falha ──────────────────────────────────
-  if (view === 'selectType') return (
+  // ── Formulário de registro (tipo + nota em 1 tela) ────────────────────
+  if (view === 'registerForm') return (
     <div style={{ minWidth: 240 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>REGISTRAR FALHA</div>
-      <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12 }}>Estação: {station?.name}</div>
-      <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8 }}>Selecione o tipo de falha:</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>📋 REGISTRAR FALHA</div>
+      <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>Estação: {station?.name}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
         {TYPES_STATION.map(t => (
-          <label key={t.value} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-            background: selectedType === t.value ? '#1e3a5f' : '#1e293b',
-            border: `1px solid ${selectedType === t.value ? '#3b82f6' : '#334155'}`,
-            borderRadius: 6, padding: '8px 10px', transition: 'all 0.1s' }}>
-            <input type="radio" name="failType" value={t.value}
-              checked={selectedType === t.value}
-              onChange={() => setSelectedType(t.value)}
-              style={{ accentColor: '#3b82f6', width: 14, height: 14 }} />
-            <span style={{ fontSize: 12, color: '#e2e8f0' }}>{t.label}</span>
-          </label>
+          <button key={t.value} onClick={() => setSelectedType(t.value)}
+            style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12,
+              background: selectedType === t.value ? '#1e3a5f' : '#1e293b',
+              border: `1px solid ${selectedType === t.value ? '#3b82f6' : '#334155'}`,
+              color: selectedType === t.value ? '#93c5fd' : '#e2e8f0',
+              fontWeight: selectedType === t.value ? 700 : 400, transition: 'all 0.1s' }}>
+            {selectedType === t.value ? '● ' : '○ '}{t.label}
+          </button>
         ))}
       </div>
+      <textarea
+        value={note} onChange={e => setNote(e.target.value)}
+        placeholder='Observação (opcional)'
+        rows={2}
+        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 6,
+          color: '#e2e8f0', fontSize: 12, padding: '7px 10px', resize: 'none', marginBottom: 8,
+          fontFamily: 'sans-serif' }}
+      />
+      {saveError && <div style={{ color: '#ef4444', fontSize: 11, marginBottom: 8 }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={() => setView('main')}
           style={{ flex: 1, padding: '8px', background: '#334155', border: 'none', borderRadius: 6, color: '#e2e8f0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
           Cancelar
         </button>
-        <button onClick={() => { setNote(''); setView('writeNote'); }}
-          disabled={!selectedType}
-          style={{ flex: 1, padding: '8px', background: selectedType ? '#2563eb' : '#1e3a5f', border: 'none', borderRadius: 6,
-            color: selectedType ? 'white' : '#475569', fontWeight: 700, fontSize: 12,
-            cursor: selectedType ? 'pointer' : 'not-allowed', transition: 'all 0.15s' }}>
-          Aplicar →
-        </button>
-      </div>
-    </div>
-  );
-
-  // ── Etapa 2: Escrever nota ─────────────────────────────────────────────
-  if (view === 'writeNote') return (
-    <div style={{ minWidth: 240 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: '#e2e8f0', marginBottom: 2 }}>NOTA / OBSERVAÇÃO</div>
-      <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>
-        {FAILURE_ICONS_MAP[selectedType]} {selectedType.replace(/_/g, ' ')} · {station?.name}
-      </div>
-      <textarea
-        value={note} onChange={e => setNote(e.target.value)}
-        placeholder='Ex: "Equipe em campo verificando equipamento."'
-        rows={4}
-        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 6,
-          color: '#e2e8f0', fontSize: 12, padding: '8px 10px', resize: 'vertical', marginBottom: 10,
-          fontFamily: 'sans-serif' }}
-      />
-      {saveError && <div style={{ color: '#ef4444', fontSize: 11, marginBottom: 8 }}>{saveError}</div>}
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={() => setView('selectType')}
-          style={{ flex: 1, padding: '8px', background: '#334155', border: 'none', borderRadius: 6, color: '#e2e8f0', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-          ← Voltar
-        </button>
-        <button onClick={applyFailure} disabled={saving}
-          style={{ flex: 1, padding: '8px', background: '#dc2626', border: 'none', borderRadius: 6, color: 'white', fontWeight: 700, fontSize: 12, cursor: saving ? 'not-allowed' : 'pointer' }}>
+        <button onClick={applyFailure} disabled={saving || !selectedType}
+          style={{ flex: 1, padding: '8px', background: selectedType ? '#dc2626' : '#4b0f0f', border: 'none', borderRadius: 6,
+            color: selectedType ? 'white' : '#6b2929', fontWeight: 700, fontSize: 12,
+            cursor: selectedType && !saving ? 'pointer' : 'not-allowed', transition: 'all 0.15s' }}>
           {saving ? 'Aplicando...' : '✓ Confirmar'}
         </button>
       </div>
@@ -1113,7 +1089,7 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSimulate, 
   failureState: FailureImpactState | null;
   onRefresh?: () => void;
 }) {
-  const [view, setView] = useState<'main' | 'selectType' | 'writeNote' | 'restoreConfirm' | 'history'>('main');
+  const [view, setView] = useState<'main' | 'registerForm' | 'restoreConfirm' | 'history'>('main');
   const [selectedType, setSelectedType] = useState('');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -1175,7 +1151,7 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSimulate, 
 
       {/* Registrar falha operacional */}
       {!nodeFailure && (
-        <button onClick={() => { setSelectedType(''); setNote(''); setSaveError(''); setView('selectType'); }}
+        <button onClick={() => { setSelectedType(''); setNote(''); setSaveError(''); setView('registerForm'); }}
           style={{ padding: '7px', background: '#b91c1c', border: 'none', borderRadius: 5, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
           📋 REGISTRAR FALHA
         </button>
@@ -1205,59 +1181,37 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSimulate, 
     </div>
   );
 
-  // ── Selecionar tipo ──
-  if (view === 'selectType') return (
+  // ── Formulário de registro (tipo + nota em 1 tela) ────────────────────
+  if (view === 'registerForm') return (
     <div style={{ minWidth: 200 }}>
-      <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', marginBottom: 2 }}>REGISTRAR FALHA</div>
+      <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', marginBottom: 2 }}>📋 REGISTRAR FALHA</div>
       <div style={{ fontSize: 10, color: '#64748b', marginBottom: 10 }}>Nó: {link.name}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
         {TYPES_NODE.map(t => (
-          <label key={t.value} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-            background: selectedType === t.value ? '#1e3a5f' : '#1e293b',
-            border: `1px solid ${selectedType === t.value ? '#3b82f6' : '#334155'}`,
-            borderRadius: 5, padding: '7px 9px' }}>
-            <input type="radio" name="nodeFailType" value={t.value}
-              checked={selectedType === t.value}
-              onChange={() => setSelectedType(t.value)}
-              style={{ accentColor: '#3b82f6', width: 13, height: 13 }} />
-            <span style={{ fontSize: 12, color: '#e2e8f0' }}>{t.label}</span>
-          </label>
+          <button key={t.value} onClick={() => setSelectedType(t.value)}
+            style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
+              background: selectedType === t.value ? '#1e3a5f' : '#1e293b',
+              border: `1px solid ${selectedType === t.value ? '#3b82f6' : '#334155'}`,
+              color: selectedType === t.value ? '#93c5fd' : '#e2e8f0',
+              fontWeight: selectedType === t.value ? 700 : 400, transition: 'all 0.1s' }}>
+            {selectedType === t.value ? '● ' : '○ '}{t.label}
+          </button>
         ))}
       </div>
+      <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+        placeholder='Observação (opcional)'
+        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 5,
+          color: '#e2e8f0', fontSize: 12, padding: '7px 9px', resize: 'none', marginBottom: 8 }} />
+      {saveError && <div style={{ color: '#ef4444', fontSize: 10, marginBottom: 6 }}>{saveError}</div>}
       <div style={{ display: 'flex', gap: 7 }}>
         <button onClick={() => setView('main')}
           style={{ flex: 1, padding: '7px', background: '#334155', border: 'none', borderRadius: 5, color: '#e2e8f0', fontSize: 11, cursor: 'pointer' }}>
           Cancelar
         </button>
-        <button onClick={() => { setNote(''); setView('writeNote'); }} disabled={!selectedType}
-          style={{ flex: 1, padding: '7px', background: selectedType ? '#2563eb' : '#1e3a5f', border: 'none', borderRadius: 5,
-            color: selectedType ? 'white' : '#475569', fontWeight: 700, fontSize: 11,
-            cursor: selectedType ? 'pointer' : 'not-allowed' }}>
-          Aplicar →
-        </button>
-      </div>
-    </div>
-  );
-
-  // ── Escrever nota ──
-  if (view === 'writeNote') return (
-    <div style={{ minWidth: 200 }}>
-      <div style={{ fontWeight: 700, fontSize: 12, color: '#e2e8f0', marginBottom: 2 }}>NOTA / OBSERVAÇÃO</div>
-      <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8 }}>
-        {selectedType.replace(/_/g, ' ')} · {link.name}
-      </div>
-      <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
-        placeholder='"Equipe em campo verificando equipamento."'
-        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 5,
-          color: '#e2e8f0', fontSize: 12, padding: '7px 9px', resize: 'vertical', marginBottom: 8 }} />
-      {saveError && <div style={{ color: '#ef4444', fontSize: 10, marginBottom: 6 }}>{saveError}</div>}
-      <div style={{ display: 'flex', gap: 7 }}>
-        <button onClick={() => setView('selectType')}
-          style={{ flex: 1, padding: '7px', background: '#334155', border: 'none', borderRadius: 5, color: '#e2e8f0', fontSize: 11, cursor: 'pointer' }}>
-          ← Voltar
-        </button>
-        <button onClick={applyNodeFailure} disabled={saving}
-          style={{ flex: 1, padding: '7px', background: '#dc2626', border: 'none', borderRadius: 5, color: 'white', fontWeight: 700, fontSize: 11, cursor: saving ? 'not-allowed' : 'pointer' }}>
+        <button onClick={applyNodeFailure} disabled={saving || !selectedType}
+          style={{ flex: 1, padding: '7px', background: selectedType ? '#dc2626' : '#4b0f0f', border: 'none', borderRadius: 5,
+            color: selectedType ? 'white' : '#6b2929', fontWeight: 700, fontSize: 11,
+            cursor: selectedType && !saving ? 'pointer' : 'not-allowed', transition: 'all 0.15s' }}>
           {saving ? '...' : '✓ Confirmar'}
         </button>
       </div>
