@@ -1080,10 +1080,8 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSimulate, 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
 
-  // Nota da simulação manual (ConnectionNote)
-  const simNote = simulationResult?.connectionNotes?.[link.id] ?? '';
-  const [editSimNote, setEditSimNote] = useState(simNote);
-  useEffect(() => { setEditSimNote(simulationResult?.connectionNotes?.[link.id] ?? ''); }, [simulationResult?.connectionNotes, link.id]);
+  // Verifica se este link está ativamente simulado
+  const isSimulated = !!(simulationResult?.removedConnectionIds?.includes(link.id));
 
   // Falha operacional ativa neste nó
   const nodeFailure = (failureState?.failures ?? []).find(
@@ -1118,12 +1116,6 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSimulate, 
     onRefresh?.();
   }
 
-  async function saveSimNote() {
-    setSaving(true);
-    await onSaveNote(editSimNote);
-    setSaving(false);
-  }
-
   // ── Tela principal ──
   if (view === 'main') return (
     <div style={{ minWidth: 200, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1142,15 +1134,6 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSimulate, 
         </div>
       )}
 
-      {/* Nota da simulação manual */}
-      <textarea value={editSimNote} onChange={e => setEditSimNote(e.target.value)} rows={2}
-        placeholder="Nota de simulação: equipe acionada..."
-        style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', borderRadius: 5, color: '#e2e8f0', fontSize: 11, padding: '5px 8px', resize: 'vertical' }} />
-      <button onClick={saveSimNote} disabled={saving}
-        style={{ padding: '5px', background: '#3b82f6', border: 'none', borderRadius: 5, color: 'white', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-        {saving ? '...' : '💾 Salvar Nota'}
-      </button>
-
       {/* Registrar falha operacional */}
       {!nodeFailure && (
         <button onClick={() => { setSelectedType(''); setNote(''); setSaveError(''); setView('selectType'); }}
@@ -1160,10 +1143,12 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSimulate, 
       )}
 
       {/* Simular falha (ephemeral) */}
-      <button onClick={onSimulate}
-        style={{ padding: '7px', background: '#dc2626', border: 'none', borderRadius: 5, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-        ⚡ SIMULAR FALHA
-      </button>
+      {!isSimulated && (
+        <button onClick={onSimulate}
+          style={{ padding: '7px', background: '#dc2626', border: 'none', borderRadius: 5, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+          ⚡ SIMULAR FALHA
+        </button>
+      )}
 
       {/* Ver histórico */}
       <button onClick={() => setView('history')}
@@ -1171,11 +1156,13 @@ function ConnectionNotePanel({ link, simulationResult, onNormalize, onSimulate, 
         📋 Ver Histórico
       </button>
 
-      {/* Normalizar simulação manual */}
-      <button onClick={onNormalize}
-        style={{ padding: '5px', background: '#065f46', border: 'none', borderRadius: 5, color: '#6ee7b7', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-        ✓ Normalizar Simulação
-      </button>
+      {/* Normalizar simulação — só aparece quando este link está simulado */}
+      {isSimulated && (
+        <button onClick={onNormalize}
+          style={{ padding: '5px', background: '#065f46', border: 'none', borderRadius: 5, color: '#6ee7b7', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+          ✓ Normalizar Simulação
+        </button>
+      )}
     </div>
   );
 

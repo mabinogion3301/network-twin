@@ -37,13 +37,13 @@ async function main() {
     },
   });
 
-  const passwordHash = await bcrypt.hash('admin123', 10);
+  const passwordHash = await bcrypt.hash('Lacoste123', 10);
   await prisma.user.upsert({
-    where: { email: 'admin@telebras.local' },
-    update: {},
+    where: { email: 'marcelo@martins' },
+    update: { passwordHash },
     create: {
-      name: 'Administrador',
-      email: 'admin@telebras.local',
+      name: 'Marcelo',
+      email: 'marcelo@martins',
       passwordHash,
       roleId: adminRole.id,
     },
@@ -54,7 +54,7 @@ async function main() {
     await prisma.equipmentType.upsert({ where: { name }, update: {}, create: { name } });
   }
 
-  console.log('Seed concluído. Usuário admin: admin@telebras.local / senha: admin123');
+  console.log('Seed concluído. Usuário: marcelo@martins / senha: Lacoste123');
 }
 
 main()
