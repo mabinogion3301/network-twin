@@ -38,9 +38,11 @@ async function main() {
   });
 
   const passwordHash = await bcrypt.hash('Lacoste123', 10);
+
+  // Atualiza o usuário admin existente com as novas credenciais
   await prisma.user.upsert({
-    where: { email: 'marcelo@martins' },
-    update: { passwordHash },
+    where: { email: 'admin@telebras.local' },
+    update: { email: 'marcelo@martins', passwordHash, name: 'Marcelo' },
     create: {
       name: 'Marcelo',
       email: 'marcelo@martins',
@@ -58,10 +60,5 @@ async function main() {
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .catch((e) => { console.error(e); process.exit(1); })
+  .finally(async () => { await prisma.$disconnect(); });
