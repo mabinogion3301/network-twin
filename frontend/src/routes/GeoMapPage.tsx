@@ -209,6 +209,23 @@ function ZoomTracker({ onZoomChange }: { onZoomChange: (zoom: number) => void })
   return null;
 }
 
+// Componente invisível que escuta o evento global "fly-to-station" e
+// navega o mapa até as coordenadas da estação selecionada na busca.
+function FlyController() {
+  const map = useMapEvents({});
+  useEffect(() => {
+    function handler(e: Event) {
+      const { lat, lng } = (e as CustomEvent).detail;
+      if (lat != null && lng != null) {
+        map.flyTo([lat, lng], 13, { duration: 1.2 });
+      }
+    }
+    window.addEventListener('fly-to-station', handler);
+    return () => window.removeEventListener('fly-to-station', handler);
+  }, [map]);
+  return null;
+}
+
 export function GeoMapPage() {
   const [stations, setStations] = useState<GeoStation[]>([]);
   const [links, setLinks] = useState<GeoLink[]>([]);
@@ -504,6 +521,7 @@ export function GeoMapPage() {
       <div style={{ flex: 1 }}>
         <MapContainer center={BRAZIL_CENTER} zoom={INITIAL_ZOOM} style={{ height: '100%', width: '100%', background: 'var(--bg-base)' }}>
             <ZoomTracker onZoomChange={setZoom} />
+            <FlyController />
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'

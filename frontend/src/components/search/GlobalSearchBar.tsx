@@ -39,6 +39,16 @@ export function GlobalSearchBar() {
   const hasResults =
     results && (results.stations.length + results.equipments.length + results.connections.length + results.ports.length > 0);
 
+  function flyToStation(station: any) {
+    if (station.latitude != null && station.longitude != null) {
+      window.dispatchEvent(new CustomEvent('fly-to-station', {
+        detail: { lat: station.latitude, lng: station.longitude, id: station.id, name: station.name },
+      }));
+    }
+    setOpen(false);
+    setQuery(station.name);
+  }
+
   return (
     <div ref={containerRef} style={{ position: 'relative', width: 360, zIndex: 2000 }}>
       <input
@@ -55,7 +65,12 @@ export function GlobalSearchBar() {
           {results.stations.length > 0 && (
             <Group title="Estações">
               {results.stations.map((s) => (
-                <ResultItem key={s.id} primary={s.name} secondary={`${s.city} / ${s.state}`} />
+                <ResultItem
+                  key={s.id}
+                  primary={s.name}
+                  secondary={`${s.city} / ${s.state}`}
+                  onClick={() => flyToStation(s)}
+                />
               ))}
             </Group>
           )}
@@ -95,9 +110,21 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-function ResultItem({ primary, secondary }: { primary: string; secondary?: string }) {
+function ResultItem({ primary, secondary, onClick }: { primary: string; secondary?: string; onClick?: () => void }) {
+  const [hovered, setHovered] = useState(false);
   return (
-    <div style={{ padding: '6px 8px', borderRadius: 6, cursor: 'default' }}>
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        padding: '6px 8px',
+        borderRadius: 6,
+        cursor: onClick ? 'pointer' : 'default',
+        background: hovered && onClick ? 'rgba(99,102,241,0.15)' : 'transparent',
+        transition: 'background 0.1s',
+      }}
+    >
       <div style={{ color: '#e2e8f0', fontSize: 13 }}>{primary}</div>
       {secondary && <div style={{ color: '#64748b', fontSize: 11 }}>{secondary}</div>}
     </div>
