@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard, PermissionsGuard } from '../../common/guards/auth.guards';
 import { Permissions, CurrentUser } from '../../common/decorators/auth.decorators';
 import { SimulationsService } from './simulations.service';
@@ -26,6 +26,12 @@ export class SimulationsController {
   @Permissions('simulations.read')
   getCurrentState() {
     return this.service.getCurrentState();
+  }
+
+  @Delete('current')
+  @Permissions('simulations.run')
+  clearCurrent() {
+    return this.service.clearCurrent();
   }
 
   @Get(':id')

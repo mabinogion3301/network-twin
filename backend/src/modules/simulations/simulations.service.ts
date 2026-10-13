@@ -108,9 +108,27 @@ export class SimulationsService {
   }
 
   async getCurrentState() {
-    const latest = await this.prisma.failureSimulation.findFirst({ orderBy: { createdAt: 'desc' } });
+    const latest = await this.prisma.failureSimulation.findFirst({
+      orderBy: { createdAt: 'desc' },
+    });
     if (!latest) return null;
-    return { simulationId: latest.id, notes: latest.notes ?? '', ...(latest.resultJson as Record<string, unknown>) };
+    const result = latest.resultJson as Record<string, any>;
+    // Se a simulação foi encerrada (cleared), retorna null para o frontend
+    if (result?._cleared) return null;
+    return { simulationId: latest.id, notes: latest.notes ?? '', ...result };
+  }
+
+  async clearCurrent() {
+    const latest = await this.prisma.failureSimulation.findFirst({ orderBy: { createdAt: 'desc' } });
+    if (!latest) return { cleared: false };
+    const result = latest.resultJson as Record<string, any>;
+    await this.prisma.failureSimulation.update({
+      where: { id: latest.id },
+      data: { resultJson: { ...result, _cleared: true } as any },
+    });
+    // Notifica todos os clientes via WebSocket que a simulação foi encerrada
+    this.eventsGateway.broadcastSimulationResult(null);
+    return { cleared: true, id: latest.id };
   }
 
   async updateNotes(id: string, notes: string) {

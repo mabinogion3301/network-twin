@@ -7,4 +7,5 @@ export const dashboardApi = {
 export const simulationsApi = {
   history: () => api.get('/simulations').then((r) => r.data),
   current: () => api.get('/simulations/current').then((r) => r.data),
+  clearCurrent: () => api.delete('/simulations/current').then((r) => r.data),
 };

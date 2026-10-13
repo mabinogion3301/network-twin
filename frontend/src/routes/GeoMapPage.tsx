@@ -263,8 +263,9 @@ export function GeoMapPage() {
 
   // Sempre que QUALQUER usuário conectado dispara OU normaliza uma
   // simulação, todos recebem o resultado aqui via WebSocket — sem F5.
-  const handleSimulationResult = useCallback((result: SimulationResult) => {
-    setSimulationResult(result);
+  // Quando result é null significa que a simulação foi encerrada.
+  const handleSimulationResult = useCallback((result: SimulationResult | null) => {
+    setSimulationResult(result ?? null);
   }, []);
 
   // Quando qualquer usuário cria/edita/remove estação, equipamento ou
@@ -298,6 +299,15 @@ export function GeoMapPage() {
 
   function normalizeAll() {
     normalizeIds([]);
+  }
+
+  async function clearSimulation() {
+    try {
+      await simulationsApi.clearCurrent();
+      setSimulationResult(null);
+    } catch (e) {
+      console.error('Erro ao encerrar simulação:', e);
+    }
   }
 
   // Arrastar a torre no Mapa do Brasil move a posição GEOGRÁFICA real da estação.
@@ -487,8 +497,8 @@ export function GeoMapPage() {
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-base)' }}>
 
-      {/* Barra de status — só aparece quando há simulação ativa */}
-      {simulationResult && (simulationResult.removedConnectionIds?.length ?? 0) > 0 && (
+      {/* Barra de status — aparece sempre que há simulação carregada */}
+      {simulationResult && (
         <div style={{
           padding: '8px 20px', background: 'rgba(239,68,68,0.1)',
           borderBottom: '1px solid rgba(239,68,68,0.25)',
@@ -496,7 +506,8 @@ export function GeoMapPage() {
         }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--red)', boxShadow: '0 0 6px #ef4444', display: 'inline-block', flexShrink: 0 }} />
           <span style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
-            SIMULAÇÃO ATIVA · {simulationResult.removedConnectionIds.length} falha(s)
+            SIMULAÇÃO ATIVA
+            {(simulationResult.removedConnectionIds?.length ?? 0) > 0 && ` · ${simulationResult.removedConnectionIds.length} falha(s)`}
             {simulationResult.stats?.isolated ? ` · ${simulationResult.stats.isolated} isolada(s)` : ''}
             {simulationResult.stats?.degrading ? ` · ${simulationResult.stats.degrading} degradando` : ''}
           </span>
@@ -505,11 +516,19 @@ export function GeoMapPage() {
             <Legend color={IMPACTED_COLOR}  label="Impactada" />
             <Legend color={DEGRADING_COLOR} label="Degradando" />
           </div>
+          {(simulationResult.removedConnectionIds?.length ?? 0) > 0 && (
+            <button
+              onClick={normalizeAll}
+              style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-hi)', borderRadius: 'var(--radius)', padding: '4px 10px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-mono)', flexShrink: 0 }}
+            >
+              ✓ Normalizar tudo
+            </button>
+          )}
           <button
-            onClick={normalizeAll}
-            style={{ background: 'var(--bg-hover)', border: '1px solid var(--border-hi)', borderRadius: 'var(--radius)', padding: '4px 10px', color: 'var(--text-primary)', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-mono)', flexShrink: 0 }}
+            onClick={clearSimulation}
+            style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 'var(--radius)', padding: '4px 10px', color: '#ef4444', cursor: 'pointer', fontSize: 11, fontFamily: 'var(--font-mono)', flexShrink: 0 }}
           >
-            ✓ Normalizar tudo
+            ✕ Encerrar simulação
           </button>
         </div>
       )}
